@@ -1,0 +1,17 @@
+server:
+  port: ${PORT:8080}
+  address: ${SERVER_ADDRESS:127.0.0.1}
+spring:
+  application:
+    name: dotodo
+  datasource:
+    url: jdbc:h2:file:./data/dotodo
+    username: sa
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+  jackson:
+    deserialization:
+      fail-on-null-for-primitives: true

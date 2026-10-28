@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-android/
+dist-ios/
+.gradle/
+build/
+.expo/
+.local/
+data/
+*.log
+.env
+.env.local
+local.properties
+mobile/android/
+mobile/ios/
+.DS_Store
+*.tsbuildinfo

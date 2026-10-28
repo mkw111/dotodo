@@ -1,0 +1,12 @@
+{
+  "name": "dotodo",
+  "private": true,
+  "version": "0.3.0",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend test",
+    "backend": "cd backend && gradlew.bat bootRun",
+    "mobile": "npm --prefix mobile start"
+  }
+}
