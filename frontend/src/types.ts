@@ -1,4 +1,4 @@
-export type Priority = 0 | 1 | 2 | 3;
+export type Priority = 0 | 1 | 2 | 3 | 4;
 export type Repeat = "none" | "daily" | "weekdays" | "weekly" | "monthly";
 export type Task = {
   id: string;
@@ -6,6 +6,7 @@ export type Task = {
   notes: string;
   listId: string;
   date: string;
+  endDate?: string;
   time: string;
   priority: Priority;
   tags: string[];
@@ -17,8 +18,10 @@ export type Task = {
   createdAt: string;
   order: number;
   recurrenceSource?: string;
+  habitId?: string;
   repeatDay?: number;
   durationMinutes?: number;
+  reminderMinutes?: number;
 };
 export type TaskList = {
   id: string;
@@ -66,6 +69,7 @@ export type Workspace = {
   timer: Timer;
   settings: Settings;
   rewards?: RankReward[];
+  calendarPlans?: Record<string, string>;
 };
 export type RankReward = {
   id: string;
@@ -100,7 +104,7 @@ export const palette = [
   "#df777a",
   "#6299bb",
 ];
-export const priorityNames = ["우선순위 없음", "높음", "보통", "낮음"];
+export const priorityNames = ["우선순위 없음", "높음", "보통", "낮음", "가장 낮음"];
 export const repeatNames: Record<Repeat, string> = {
   none: "반복 안 함",
   daily: "매일",

@@ -45,6 +45,16 @@ export function nextRepeat(
     next = addDays(next, 1);
   return next;
 }
+export function scheduledOn(task: Task, day: string) {
+  return Boolean(task.date) && task.date <= day && (task.endDate || task.date) >= day;
+}
+
+export function moveTaskDate(task: Task, date: string): Partial<Task> {
+  if (!date || !task.endDate) return { date, endDate: undefined };
+  const span = Math.round((Date.parse(task.endDate) - Date.parse(task.date)) / 86_400_000);
+  return { date, endDate: addDays(date, span) };
+}
+
 export function newTask(title: string, patch: Partial<Task> = {}): Task {
   return {
     id: uid(),
@@ -65,16 +75,78 @@ export function newTask(title: string, patch: Partial<Task> = {}): Task {
     ...patch,
   };
 }
+export function saveTaskWithHabit(state: Workspace, task: Task, linkHabit?: boolean): Workspace {
+  const existing = state.tasks.find((item) => item.id === task.id);
+  const tasks = existing
+    ? state.tasks.map((item) => item.id === task.id ? task : item)
+    : [...state.tasks, task];
+  const next = { ...state, tasks };
+  if (linkHabit === undefined) return next;
+
+  const habitId = task.habitId;
+  if (!linkHabit || task.repeat !== "daily" || !task.date) {
+    return habitId ? {
+      ...next,
+      tasks: tasks.map((item) => item.habitId === habitId ? { ...item, habitId: undefined } : item),
+    } : next;
+  }
+  if (habitId || state.habits.length >= 200 || !task.title.trim()) return next;
+
+  const byId = new Map(tasks.map((item) => [item.id, item]));
+  let root = task;
+  const ancestors = new Set([task.id]);
+  while (root.recurrenceSource) {
+    const parent = byId.get(root.recurrenceSource);
+    if (!parent || parent.habitId || ancestors.has(parent.id)) break;
+    ancestors.add(parent.id);
+    root = parent;
+  }
+  const children = new Map<string, Task[]>();
+  for (const item of tasks) {
+    if (!item.recurrenceSource || item.habitId) continue;
+    const siblings = children.get(item.recurrenceSource) ?? [];
+    siblings.push(item);
+    children.set(item.recurrenceSource, siblings);
+  }
+  const family = new Set<string>();
+  const checks: Record<string, number> = {};
+  const remaining = [root];
+  while (remaining.length) {
+    const item = remaining.pop()!;
+    if (family.has(item.id)) continue;
+    family.add(item.id);
+    if (item.completed && item.completedAt) {
+      const day = localDate(new Date(item.completedAt));
+      checks[day] = Math.min(100, (checks[day] || 0) + 1);
+    }
+    for (const child of children.get(item.id) ?? []) remaining.push(child);
+  }
+  const id = uid();
+  return {
+    ...state,
+    tasks: tasks.map((item) => family.has(item.id) ? { ...item, habitId: id } : item),
+    habits: [...state.habits, {
+      id,
+      name: task.title.trim().slice(0, 100),
+      color: state.lists.find((list) => list.id === task.listId)?.color ?? palette[0],
+      icon: "habit",
+      goal: 1,
+      checks,
+    }],
+  };
+}
+
 export function toggleTask(state: Workspace, id: string): Workspace {
   const task = state.tasks.find((t) => t.id === id);
-  if (!task) return state;
+  if (!task || task.deletedAt) return state;
   const completed = !task.completed;
+  const completedAt = completed ? new Date().toISOString() : null;
   let tasks = state.tasks.map((t) =>
     t.id === id
       ? {
           ...t,
           completed,
-          completedAt: completed ? new Date().toISOString() : null,
+          completedAt,
         }
       : t
   );
@@ -88,7 +160,7 @@ export function toggleTask(state: Workspace, id: string): Workspace {
       newTask(task.title, {
         ...task,
         id: uid(),
-        date: nextRepeat(task.date, task.repeat, task.repeatDay),
+        ...moveTaskDate(task, nextRepeat(task.date, task.repeat, task.repeatDay)),
         repeatDay: task.repeatDay || Number(task.date.slice(-2)),
         completed: false,
         completedAt: null,
@@ -102,17 +174,30 @@ export function toggleTask(state: Workspace, id: string): Workspace {
         order: Date.now(),
       })
     );
-  return { ...state, tasks };
+  const timestamp = completedAt ?? task.completedAt;
+  if (!task.habitId || !timestamp) return { ...state, tasks };
+  const day = localDate(new Date(timestamp));
+  return {
+    ...state,
+    tasks,
+    habits: state.habits.map((habit) => habit.id === task.habitId ? {
+      ...habit,
+      checks: {
+        ...habit.checks,
+        [day]: Math.max(0, Math.min(100, (habit.checks[day] || 0) + (completed ? 1 : -1))),
+      },
+    } : habit),
+  };
 }
 export function matches(task: Task, view: View, today = localDate()): boolean {
   if (view === "trash") return Boolean(task.deletedAt);
   if (task.deletedAt) return false;
   if (view === "completed") return task.completed;
   if (view === "today") return Boolean(task.date) && task.date <= today;
-  if (view === "tomorrow") return task.date === addDays(today, 1);
+  if (view === "tomorrow") return scheduledOn(task, addDays(today, 1));
   if (view === "week")
     return (
-      Boolean(task.date) && task.date >= today && task.date <= addDays(today, 6)
+      Boolean(task.date) && (task.endDate || task.date) >= today && task.date <= addDays(today, 6)
     );
   if (view === "important") return task.priority === 1;
   if (view === "inbox") return task.listId === "inbox";
@@ -375,8 +460,11 @@ export function validateWorkspace(value: unknown): Workspace {
         (t.listId === "inbox" || w.lists.some((l) => l.id === t.listId)) &&
         typeof t.date === "string" &&
         (t.date === "" || validDate(t.date)) &&
+        (t.endDate === undefined ||
+          (typeof t.endDate === "string" && validDate(t.endDate) &&
+            Boolean(t.date) && t.endDate >= t.date && !t.time)) &&
         (t.time === "" || /^([01]\d|2[0-3]):[0-5]\d$/.test(t.time)) &&
-        [0, 1, 2, 3].includes(t.priority) &&
+        [0, 1, 2, 3, 4].includes(t.priority) &&
         Array.isArray(t.tags) &&
         t.tags.length <= 30 &&
         t.tags.every((tag) => str(tag, 40, 1)) &&
@@ -393,10 +481,15 @@ export function validateWorkspace(value: unknown): Workspace {
         str(t.createdAt, 100, 1) &&
         stamp(t.createdAt) &&
         Number.isFinite(t.order) &&
+        (t.reminderMinutes === undefined ||
+          (Number.isInteger(t.reminderMinutes) &&
+            t.reminderMinutes >= 0 && t.reminderMinutes <= 10080)) &&
         (t.durationMinutes === undefined ||
           (Number.isInteger(t.durationMinutes) &&
             t.durationMinutes >= 15 &&
             t.durationMinutes <= 720)) &&
+        (t.habitId === undefined ||
+          (str(t.habitId, 100, 1) && w.habits.some((habit) => habit.id === t.habitId))) &&
         (t.recurrenceSource === undefined || str(t.recurrenceSource, 100, 1)) &&
         (t.repeatDay === undefined ||
           (Number.isInteger(t.repeatDay) &&
@@ -465,6 +558,12 @@ export function validateWorkspace(value: unknown): Workspace {
     t.remaining < 0 ||
     t.remaining > t.duration
   )
+    return fail();
+  if (w.calendarPlans !== undefined &&
+    (!w.calendarPlans || typeof w.calendarPlans !== "object" || Array.isArray(w.calendarPlans) ||
+      Object.keys(w.calendarPlans).length > 1200 ||
+      Object.entries(w.calendarPlans).some(([period, plan]) =>
+        !/^\d{4}(?:-(?:0[1-9]|1[0-2]))?$/.test(period) || !str(plan, 3000))))
     return fail();
   return w;
 }

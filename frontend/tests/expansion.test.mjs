@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { appReminders } from "../src/AppReminders.ts";
 import { recognizeInput } from "../src/smartInput.ts";
 import {
   createWorkspace,
   newTask,
+  moveTaskDate,
+  scheduledOn,
+  saveTaskWithHabit,
   toggleTask,
   validateWorkspace,
 } from "../src/model.ts";
@@ -196,4 +200,55 @@ test("backup validation rejects corrupt rank rewards and duration", () => {
   w = createWorkspace();
   w.tasks[0].durationMinutes = 0;
   assert.throws(() => validateWorkspace(w));
+});
+
+test("app reminders reflect rescheduled tasks and skip inactive or past reminders", () => {
+  const task = newTask("회의", { date: "2026-10-28", time: "14:00", reminderMinutes: 10 });
+  const now = new Date("2026-10-28T13:00:00").getTime();
+  const at = new Date("2026-10-28T13:50:00").getTime();
+  assert.deepEqual(appReminders([task], now), [{ taskId: task.id, title: task.title, at }]);
+  assert.equal(appReminders([{ ...task, time: "14:30" }], now)[0].at, at + 30 * 60_000);
+  assert.deepEqual(appReminders([
+    { ...task, completed: true },
+    { ...task, deletedAt: new Date(now).toISOString() },
+    { ...task, reminderMinutes: undefined },
+    { ...task, time: "13:00" },
+    { ...task, time: "" },
+  ], now), []);
+});
+
+test("multi-day all-day dates are inclusive and preserve their length when moved", () => {
+  const task = newTask("출장", { date: "2026-11-28", endDate: "2026-12-02" });
+  assert.equal(scheduledOn(task, "2026-11-27"), false);
+  assert.equal(scheduledOn(task, "2026-11-28"), true);
+  assert.equal(scheduledOn(task, "2026-12-02"), true);
+  assert.equal(scheduledOn(task, "2026-12-03"), false);
+  assert.deepEqual(moveTaskDate(task, "2026-12-31"), { date: "2026-12-31", endDate: "2027-01-04" });
+
+  const workspace = { ...createWorkspace(), tasks: [task] };
+  assert.equal(validateWorkspace(workspace).tasks[0].endDate, "2026-12-02");
+  assert.throws(() => validateWorkspace({ ...workspace, tasks: [{ ...task, endDate: "2026-11-27" }] }));
+});
+
+test("daily tasks share one linked habit through recurrence and completion undo", () => {
+  const task = newTask("매일 독서", { date: localDate(), repeat: "daily" });
+  let workspace = saveTaskWithHabit(createWorkspace(false), task, true);
+  const habitId = workspace.tasks[0].habitId;
+  const count = () => workspace.habits.find((habit) => habit.id === habitId).checks[localDate()];
+  assert.ok(habitId);
+  assert.equal(validateWorkspace(workspace).tasks[0].habitId, habitId);
+  workspace = toggleTask(workspace, task.id);
+  assert.equal(count(), 1);
+  assert.equal(workspace.tasks.find((item) => item.recurrenceSource === task.id).habitId, habitId);
+  workspace = toggleTask(workspace, task.id);
+  assert.equal(count(), 0);
+  workspace = toggleTask(workspace, task.id);
+  assert.equal(count(), 1);
+  assert.equal(workspace.tasks.length, 2);
+  workspace = saveTaskWithHabit(workspace, workspace.tasks[1], true);
+  assert.equal(workspace.habits.filter((habit) => habit.id === habitId).length, 1);
+  workspace = saveTaskWithHabit(workspace, workspace.tasks[1], false);
+  assert.ok(workspace.tasks.every((item) => item.habitId === undefined));
+  assert.equal(count(), 1);
+  assert.equal(validateWorkspace(workspace).tasks.length, 2);
 });

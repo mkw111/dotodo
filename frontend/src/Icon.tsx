@@ -95,9 +95,11 @@ const paths: Record<IconName, string> = {
 export default function Icon({
   name,
   size = 20,
+  flagNumber,
 }: {
   name: string;
   size?: number;
+  flagNumber?: number;
 }) {
   return (
     <svg
@@ -112,6 +114,10 @@ export default function Icon({
       aria-hidden="true"
     >
       <path d={paths[name as IconName] || paths.list} />
+      {name === "flag" && flagNumber && (
+        <text x="12.5" y="11.8" textAnchor="middle" fontSize="10" fontWeight="800"
+          stroke="none" fill="currentColor" fillOpacity="1">{flagNumber}</text>
+      )}
     </svg>
   );
 }

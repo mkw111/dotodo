@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import {
   useCallback,
   useEffect,
@@ -6,19 +7,23 @@ import {
   type FormEvent,
 } from "react";
 import Icon from "./Icon";
+import { appReminders } from "./AppReminders";
 import Modal, { SaveErrorContext } from "./Modal";
 import TaskDetail from "./TaskDetail";
 import CalendarView from "./CalendarView";
 import FocusView from "./FocusView";
 import HabitsView from "./HabitsView";
 import SettingsView from "./SettingsView";
-import QuickComposer from "./QuickComposer";
+import QuickComposer, { QuickAddSheet } from "./QuickComposer";
 import RankView, { RankMiniCard } from "./RankView";
 import useWorkspace from "./useWorkspace";
 import { dataMode } from "./api";
 import {
   addDays,
   matches,
+  moveTaskDate,
+  scheduledOn,
+  saveTaskWithHabit,
   newTask,
   remainingSeconds,
   toggleTask,
@@ -76,6 +81,7 @@ export default function App() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [checked, setChecked] = useState<string[]>([]);
   const [listEditor, setListEditor] = useState<TaskList | "new" | null>(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [newEditor, setNewEditor] = useState<Task | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
@@ -83,7 +89,11 @@ export default function App() {
     run: () => Promise<boolean>;
   } | null>(null);
   const [undo, setUndo] = useState<{ ids: string[] } | null>(null);
+  const [homeDate, setHomeDate] = useState<string | null>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressSwipeClick = useRef(false);
   const [today, setToday] = useState(localDate());
+  const [completionDay, setCompletionDay] = useState("");
   const [calendarStart, setCalendarStart] = useState(localDate());
   const dirtyDetail = useRef(false);
   const onDirtyChange = useCallback((value: boolean) => {
@@ -97,6 +107,25 @@ export default function App() {
       return false;
     dirtyDetail.current = false;
     return true;
+  }
+  function discardDetail() {
+    dirtyDetail.current = false;
+    if (newEditor) setNewEditor(null);
+    else setSelected(null);
+  }
+  function closeDetail() {
+    if (!dirtyDetail.current) {
+      discardDetail();
+      return;
+    }
+    setConfirmation({
+      title: "편집을 취소할까요?",
+      message: "저장하지 않은 변경사항을 폐기합니다.",
+      run: async () => {
+        discardDetail();
+        return true;
+      },
+    });
   }
   function chooseTask(id: string | null) {
     if (canLeaveDetail()) setSelected(id);
@@ -116,6 +145,7 @@ export default function App() {
     const canGoBack = Boolean(
       selected ||
         newEditor ||
+        quickAddOpen ||
         listEditor ||
         confirmation ||
         sidebarOpen ||
@@ -133,6 +163,7 @@ export default function App() {
   }, [
     selected,
     newEditor,
+    quickAddOpen,
     listEditor,
     confirmation,
     sidebarOpen,
@@ -143,21 +174,22 @@ export default function App() {
   ]);
   useEffect(() => {
     const back = () => {
-      if ((newEditor || selected) && !canLeaveDetail()) return;
       if (confirmation) setConfirmation(null);
-      else if (newEditor) setNewEditor(null);
+      else if (newEditor) closeDetail();
+      else if (quickAddOpen) setQuickAddOpen(false);
       else if (listEditor) setListEditor(null);
       else if (searchOpen) setSearchOpen(false);
-      else if (selected) setSelected(null);
+      else if (selected) closeDetail();
       else if (sidebarOpen) setSidebarOpen(false);
       else {
         setView("today");
+        setHomeDate(null);
         setQuery("");
       }
     };
     window.addEventListener("dotodo:back", back);
     return () => window.removeEventListener("dotodo:back", back);
-  }, [confirmation, newEditor, listEditor, searchOpen, selected, sidebarOpen]);
+  }, [confirmation, newEditor, quickAddOpen, listEditor, searchOpen, selected, sidebarOpen]);
   useEffect(() => {
     const t = setInterval(() => {
       setToday(localDate());
@@ -186,19 +218,56 @@ export default function App() {
         setSidebarOpen(false);
         setQuery("");
       }
-      if (!typing && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "n") {
+      if (!typing && !quickAddOpen && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         if (!canLeaveDetail()) return;
         setSelected(null);
-        setNewEditor(newTask("", { date: today }));
+        if (view === "today" && !query) setQuickAddOpen(true);
+        else setNewEditor(newTask("", { date: today }));
       }
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [today]);
+  }, [today, view, query, quickAddOpen]);
+  useEffect(() => {
+    if (!state?.tasks || !window.ReactNativeWebView) return;
+    const openReminder = (event: Event) => {
+      const id = (event as CustomEvent<unknown>).detail;
+      if (typeof id !== "string") return;
+      window.ReactNativeWebView?.postMessage(JSON.stringify({
+        type: "DOTODO_REMINDER_OPENED", taskId: id,
+      }));
+      const task = state.tasks.find((item) => item.id === id && !item.deletedAt);
+      if (!task) {
+        setNotice("이 알림의 일정을 찾을 수 없어요.");
+        return;
+      }
+      if (!canLeaveDetail()) return;
+      setNewEditor(null);
+      setListEditor(null);
+      setConfirmation(null);
+      setSearchOpen(false);
+      setSidebarOpen(false);
+      setQuery("");
+      setView(task.date ? "calendar" : "all");
+      if (task.date) setCalendarStart(task.date);
+      setSelected(id);
+    };
+    window.addEventListener("dotodo:open-reminder", openReminder);
+    const sendReminders = () => window.ReactNativeWebView?.postMessage(JSON.stringify({
+      type: "DOTODO_REMINDERS", reminders: appReminders(state.tasks),
+    }));
+    window.addEventListener("dotodo:refresh-reminders", sendReminders);
+    sendReminders();
+    return () => {
+      window.removeEventListener("dotodo:open-reminder", openReminder);
+      window.removeEventListener("dotodo:refresh-reminders", sendReminders);
+    };
+  }, [state?.tasks]);
   useEffect(() => {
     if (
       !state ||
+      window.ReactNativeWebView ||
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     )
@@ -244,6 +313,10 @@ export default function App() {
         )}
       </div>
     );
+  const home = view === "today" && !query;
+  const displayedDay = view === "today" && !query ? homeDate ?? today : today;
+  const dayTitle = displayedDay === today ? "오늘" :
+    new Date(`${displayedDay}T12:00:00`).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
   const tasks = state.tasks;
   const visibleTasks = tasks.filter((t) => !t.deletedAt);
   const active = visibleTasks.filter((t) => !t.completed);
@@ -259,6 +332,7 @@ export default function App() {
   ].includes(view);
   const title = query
     ? "검색 결과"
+    : view === "today" ? dayTitle
     : view.startsWith("list:")
     ? state.lists.find((l) => l.id === view.slice(5))?.name || "리스트"
     : view.startsWith("tag:")
@@ -266,17 +340,25 @@ export default function App() {
     : specialTitles[view] ||
       smartViews.find((v) => v.id === view)?.name ||
       "할 일";
+  const completedOn = (task: Task, day: string) =>
+    task.completed && Boolean(task.completedAt) &&
+    localDate(new Date(task.completedAt!)) === day;
   const filtered = tasks.filter((t) =>
     query
       ? !t.deletedAt &&
         `${t.title} ${t.notes} ${t.tags.join(" ")}`
           .toLowerCase()
           .includes(query.toLowerCase())
-      : matches(t, view, today)
+      : view === "today" && t.completed
+      ? !t.deletedAt && completedOn(t, displayedDay)
+      : view === "today" && displayedDay !== today
+      ? !t.deletedAt && scheduledOn(t, displayedDay)
+      : matches(t, view, today) &&
+        (view !== "completed" || !completionDay || completedOn(t, completionDay))
   );
   const sorted = [...filtered].sort((a, b) =>
     sort === "priority"
-      ? (a.priority || 4) - (b.priority || 4) || a.order - b.order
+      ? (a.priority || 5) - (b.priority || 5) || a.order - b.order
       : sort === "date"
       ? (a.date || "9999").localeCompare(b.date || "9999") ||
         a.time.localeCompare(b.time)
@@ -286,10 +368,10 @@ export default function App() {
   );
   const pending = sorted.filter((t) => !t.completed);
   const completed = sorted.filter((t) => t.completed);
-  const todayTasks = visibleTasks.filter((t) => t.date === today);
-  const todayDone = todayTasks.filter((t) => t.completed).length;
-  const progress = todayTasks.length
-    ? Math.round((todayDone / todayTasks.length) * 100)
+  const todayDone = visibleTasks.filter((t) => completedOn(t, displayedDay)).length;
+  const todayTotal = todayDone + active.filter((t) => scheduledOn(t, displayedDay)).length;
+  const progress = todayTotal
+    ? Math.round((todayDone / todayTotal) * 100)
     : 0;
   const subtitle =
     view === "today"
@@ -308,35 +390,62 @@ export default function App() {
   function navigate(next: View) {
     if (!canLeaveDetail()) return;
     setView(next);
+    if (next === "today") setHomeDate(null);
     setQuery("");
     setSelected(null);
     setChecked([]);
     setSelectionMode(false);
     setSidebarOpen(false);
   }
+  function shiftHome(direction: number) {
+    if (!canLeaveDetail()) return;
+    const date = addDays(displayedDay, direction);
+    setHomeDate(date === today ? null : date);
+    setSelected(null);
+    setChecked([]);
+  }
   const patchTask = (id: string, patch: Partial<Task>, message?: string) =>
     commit(
       (w) => ({
         ...w,
-        tasks: w.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+        tasks: w.tasks.map((t) => (t.id === id ? {
+          ...t,
+          ...(patch.date !== undefined ? moveTaskDate(t, patch.date) : {}),
+          ...patch,
+          ...(patch.time ? { endDate: undefined } : {}),
+        } : t)),
       }),
       message
     );
-  const saveTask = (task: Task) =>
+  const saveTask = (task: Task, linkHabit?: boolean) =>
     commit(
-      (w) => ({
-        ...w,
-        tasks: w.tasks.some((t) => t.id === task.id)
-          ? w.tasks.map((t) => (t.id === task.id ? task : t))
-          : [...w.tasks, task],
-      }),
+      (workspace) => saveTaskWithHabit(workspace, task, linkHabit),
       "할 일을 저장했어요"
     );
-  const toggle = (task: Task) =>
+  async function duplicateSchedule(id: string) {
+    const source = state?.tasks.find((task) => task.id === id && !task.deletedAt && !task.completed);
+    if (!source) return null;
+    const copy = newTask(source.title, {
+      notes: source.notes,
+      listId: source.listId,
+      date: source.date,
+      endDate: source.endDate,
+      time: source.time,
+      durationMinutes: source.durationMinutes,
+      priority: source.priority,
+      tags: [...source.tags],
+      checklist: source.checklist.map(({ title }) => ({ id: uid(), title, done: false })),
+    });
+    return await commit(
+      (workspace) => ({ ...workspace, tasks: [...workspace.tasks, copy] }),
+      "복제했어요. 새 일정을 원하는 위치로 옮기세요."
+    ) ? copy.id : null;
+  }
+  const toggle = (task: Task, linkHabit?: boolean) =>
     commit(
       (w) =>
         toggleTask(
-          { ...w, tasks: w.tasks.map((t) => (t.id === task.id ? task : t)) },
+          saveTaskWithHabit(w, task, linkHabit),
           task.id
         ),
       task.completed ? "완료를 취소했어요" : "하나 더 해냈어요!"
@@ -368,13 +477,19 @@ export default function App() {
       }
     );
   }
+  function openQuickAdd() {
+    if (!canLeaveDetail()) return;
+    setSelected(null);
+    setQuickAddOpen(true);
+  }
   function openNew(
     date = ["today", "tomorrow"].includes(view)
       ? view === "tomorrow"
         ? addDays(today, 1)
-        : today
+        : displayedDay
       : "",
-    time = ""
+    time = "",
+    options: Pick<Task, "endDate" | "durationMinutes"> = {}
   ) {
     if (!canLeaveDetail()) return;
     setSelected(null);
@@ -382,6 +497,7 @@ export default function App() {
       newTask("", {
         date,
         time,
+        ...options,
         listId: view.startsWith("list:") ? view.slice(5) : "inbox",
         tags: view.startsWith("tag:") ? [view.slice(4)] : [],
       })
@@ -390,7 +506,7 @@ export default function App() {
   function fromQuick(draft: Partial<Task> & { title: string }) {
     return newTask(draft.title, {
       ...draft,
-      listId: view.startsWith("list:") ? view.slice(5) : "inbox",
+      listId: draft.listId ?? (view.startsWith("list:") ? view.slice(5) : "inbox"),
       tags: [
         ...new Set([
           ...(draft.tags || []),
@@ -427,6 +543,7 @@ export default function App() {
     return (
       <article
         key={task.id}
+        data-priority={home && task.priority ? task.priority : undefined}
         className={`task-row ${task.completed ? "completed" : ""} ${
           selected === task.id ? "selected" : ""
         } ${compact ? "compact" : ""}`}
@@ -505,9 +622,32 @@ export default function App() {
           </span>
         </button>
         {!compact && (
-          <span className="task-list-label">
+          <span className={`task-list-label ${isTrash ? "" : "task-list-picker"}`}>
             <i style={{ background: list?.color || "#b0b7c4" }} />
-            {list?.name || "수집함"}
+            <span>{list?.name || "수집함"}</span>
+            {!isTrash && (
+              <>
+                <Icon name="chevron" size={10} />
+                <select
+                  aria-label={`${task.title} 리스트 변경`}
+                  value={task.listId}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const listId = event.target.value;
+                    if (selected === task.id && dirtyDetail.current) {
+                      if (!canLeaveDetail()) return;
+                      setSelected(null);
+                    }
+                    void patchTask(task.id, { listId }, "리스트를 변경했어요");
+                  }}
+                >
+                  <option value="inbox">수집함</option>
+                  {state!.lists.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </span>
         )}
         {isTrash ? (
@@ -546,15 +686,15 @@ export default function App() {
           <button
             className={`icon-btn priority-flag p${task.priority}`}
             aria-label={`${task.title} 우선순위 변경`}
-            title={priorityNames[task.priority]}
+            title={task.priority ? `우선순위 ${task.priority} · ${priorityNames[task.priority]}` : priorityNames[0]}
             disabled={busy}
             onClick={() =>
               patchTask(task.id, {
-                priority: ((task.priority + 1) % 4) as Priority,
+                priority: ((task.priority + 1) % 5) as Priority,
               })
             }
           >
-            <Icon name="flag" size={15} />
+            <Icon name="flag" size={21} flagNumber={task.priority || undefined} />
           </button>
         )}
       </article>
@@ -570,10 +710,10 @@ export default function App() {
           ? state!.lists.find((l) => l.id === task.listId)?.name || "수집함"
           : group === "none"
           ? "할 일"
-          : task.date && task.date < today
+          : (task.endDate ?? task.date) && (task.endDate ?? task.date) < displayedDay
           ? "기한이 지난 할 일"
           : task.date
-          ? dateLabel(task.date, today)
+          ? dateLabel(scheduledOn(task, displayedDay) ? displayedDay : task.date, today)
           : "날짜 없음";
       groups.set(label, [...(groups.get(label) || []), task]);
     }
@@ -815,7 +955,7 @@ export default function App() {
                 </button>
               )}
               <span className="topbar-date">
-                {new Date(`${today}T12:00:00`).toLocaleDateString("ko-KR", {
+                {new Date(`${displayedDay}T12:00:00`).toLocaleDateString("ko-KR", {
                   month: "long",
                   day: "numeric",
                   weekday: "short",
@@ -831,17 +971,56 @@ export default function App() {
               >
                 <Icon name="search" size={18} />
               </button>
-              <button
+              {!home && <button
                 className="topbar-add"
                 aria-label="새 할 일"
                 onClick={() => openNew()}
               >
                 <Icon name="plus" size={17} />
-              </button>
+              </button>}
             </div>
           </header>
           <div className="page-layout">
-            <div className="page-main">
+            <div className={`page-main ${view === "today" && !query ? "home-swipe" : ""}`}
+              onPointerDown={(event) => {
+                suppressSwipeClick.current = false;
+                if (view !== "today" || query || event.pointerType !== "touch" ||
+                    (event.target as Element).closest("input, textarea, select, [contenteditable]")) return;
+                swipeStart.current = { x: event.clientX, y: event.clientY };
+              }}
+              onPointerCancel={() => { swipeStart.current = null; }}
+              onPointerUp={(event) => {
+                const start = swipeStart.current;
+                swipeStart.current = null;
+                if (!start || view !== "today" || query) return;
+                const dx = event.clientX - start.x;
+                const dy = event.clientY - start.y;
+                if (Math.abs(dx) >= 55 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+                  suppressSwipeClick.current = true;
+                  shiftHome(dx > 0 ? -1 : 1);
+                }
+              }}
+              onClickCapture={(event) => {
+                if (!suppressSwipeClick.current) return;
+                suppressSwipeClick.current = false;
+                if (event.detail === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}>
+              {view === "today" && !query && (
+                <div className="home-day-nav">
+                  <button className="icon-btn" aria-label="전날" onClick={() => shiftHome(-1)}><Icon name="left" size={17} /></button>
+                  <strong>{dayTitle}</strong>
+                  <button className="icon-btn" aria-label="다음 날" onClick={() => shiftHome(1)}><Icon name="right" size={17} /></button>
+                  {homeDate && <button className="btn small" onClick={() => {
+                    if (canLeaveDetail()) {
+                      setHomeDate(null);
+                      setSelected(null);
+                      setChecked([]);
+                    }
+                  }}>오늘로</button>}
+                </div>
+              )}
               <div className="page-heading">
                 <div>
                   <div className="page-eyebrow">
@@ -931,7 +1110,7 @@ export default function App() {
                       </div>
                       <div className="today-progress">
                         <span>
-                          <strong>{todayDone}</strong> / {todayTasks.length}{" "}
+                          <strong>{todayDone}</strong> / {todayTotal}{" "}
                           완료
                         </span>
                         <div className="thin-progress">
@@ -941,13 +1120,13 @@ export default function App() {
                       <span className="banner-orbit" />
                     </section>
                   )}
-                  {view !== "trash" && view !== "completed" && (
+                  {!home && view !== "trash" && view !== "completed" && (
                     <QuickComposer
                       key={view}
                       today={today}
                       defaultDate={
                         view === "today"
-                          ? today
+                          ? displayedDay
                           : view === "tomorrow"
                           ? addDays(today, 1)
                           : ""
@@ -972,6 +1151,17 @@ export default function App() {
                       <small>{filtered.length}</small>
                     </span>
                     <div className="toolbar-selects">
+                      {view === "completed" && !query && (
+                        <>
+                          <label>
+                            완료 날짜
+                            <input type="date" aria-label="완료 날짜" value={completionDay}
+                              onChange={(e) => setCompletionDay(e.target.value)} />
+                          </label>
+                          <button className="btn small" onClick={() => setCompletionDay(today)}>오늘</button>
+                          <button className="btn small" onClick={() => setCompletionDay("")}>전체 날짜</button>
+                        </>
+                      )}
                       <label>
                         <Icon name="sort" size={14} />
                         <select
@@ -1044,7 +1234,7 @@ export default function App() {
                               ...w,
                               tasks: w.tasks.map((t) =>
                                 checked.includes(t.id)
-                                  ? { ...t, date: addDays(today, 1) }
+                                  ? { ...t, ...moveTaskDate(t, addDays(today, 1)) }
                                   : t
                               ),
                             }),
@@ -1068,7 +1258,7 @@ export default function App() {
                     completed.map((t) => row(t))
                   ) : layout === "board" ? (
                     <div className="kanban-board">
-                      {([1, 2, 3, 0] as Priority[]).map((p) => (
+                      {([1, 2, 3, 4, 0] as Priority[]).map((p) => (
                         <section
                           className={`kanban-column p${p}`}
                           key={p}
@@ -1091,7 +1281,7 @@ export default function App() {
                               setNewEditor(
                                 newTask("", {
                                   priority: p,
-                                  date: today,
+                                  date: displayedDay,
                                   listId: view.startsWith("list:")
                                     ? view.slice(5)
                                     : "inbox",
@@ -1149,7 +1339,7 @@ export default function App() {
                         {completed.map((t) => row(t))}
                       </details>
                     )}
-                  {view !== "trash" && view !== "completed" && (
+                  {!home && view !== "trash" && view !== "completed" && (
                     <button
                       className="list-add-bottom"
                       onClick={() => openNew()}
@@ -1161,15 +1351,25 @@ export default function App() {
                 </>
               ) : view === "calendar" ? (
                 <CalendarView
+                  key={calendarStart}
                   initialDate={calendarStart}
+                  plans={state.calendarPlans ?? {}}
+                  busy={busy}
+                  onSavePlan={(period, text) => commit((workspace) => {
+                    const plans = { ...workspace.calendarPlans };
+                    if (text) plans[period] = text;
+                    else delete plans[period];
+                    return { ...workspace, calendarPlans: plans };
+                  }, "계획을 저장했어요")}
                   tasks={tasks}
                   lists={state.lists}
                   weekStart={state.settings.weekStart}
                   onSelect={chooseTask}
+                  onDuplicate={duplicateSchedule}
                   onMove={(id, date) =>
                     patchTask(id, { date }, "일정을 옮겼어요")
                   }
-                  onAdd={(date, time) => openNew(date, time)}
+                  onAdd={openNew}
                   onSchedule={(id, patch) =>
                     patchTask(id, patch, "일정 시간을 변경했어요")
                   }
@@ -1236,11 +1436,11 @@ export default function App() {
                           if (task)
                             void patchTask(id, {
                               priority: q.important ? 1 : 0,
-                              date: q.urgent
+                              ...moveTaskDate(task, q.urgent
                                 ? today
                                 : task.date && task.date <= today
                                 ? addDays(today, 1)
-                                : task.date,
+                                : task.date),
                             });
                         }}
                       >
@@ -1276,12 +1476,14 @@ export default function App() {
               </footer>
             </div>
             {selectedTask ? (
-              <TaskDetail
+              <ResponsiveTaskDetail
                 key={selectedTask.id}
                 task={selectedTask}
                 lists={state.lists}
                 busy={busy}
-                onClose={() => chooseTask(null)}
+                onClose={closeDetail}
+                onDiscard={discardDetail}
+                habitLimitReached={state.habits.length >= 200}
                 onDirtyChange={onDirtyChange}
                 onSave={saveTask}
                 onToggle={toggle}
@@ -1291,7 +1493,7 @@ export default function App() {
             ) : view === "today" && !query ? (
               <TodayOverview
                 state={state}
-                today={today}
+                today={displayedDay}
                 onDate={(day) => {
                   setCalendarStart(day);
                   navigate("calendar");
@@ -1320,6 +1522,11 @@ export default function App() {
             ) : null}
           </div>
         </main>
+        {home && (
+          <button className="home-quick-add" aria-label="할 일 추가" onClick={openQuickAdd}>
+            <Icon name="plus" size={28} />
+          </button>
+        )}
         <nav className="mobile-bottom-nav" aria-label="주요 기능">
           {sections.map((s) => (
             <button
@@ -1468,26 +1675,43 @@ export default function App() {
             }}
           />
         )}
+        {quickAddOpen && (
+          <QuickAddSheet
+            today={today}
+            defaultDate={displayedDay}
+            sheetLists={state.lists}
+            busy={busy}
+            onClose={() => setQuickAddOpen(false)}
+            onAdd={async (draft) => {
+              const saved = await saveTask(fromQuick(draft));
+              if (saved) setQuickAddOpen(false);
+              return saved;
+            }}
+            onDetails={(draft) => {
+              setQuickAddOpen(false);
+              setNewEditor(fromQuick(draft));
+            }}
+          />
+        )}
         {newEditor && (
           <Modal
             title="새로운 할 일"
             wide
-            onClose={() => {
-              if (canLeaveDetail()) setNewEditor(null);
-            }}
+            onClose={closeDetail}
           >
             <div className="new-task-detail">
               <TaskDetail
+                key={newEditor.id}
                 task={newEditor}
                 isNew
+                habitLimitReached={state.habits.length >= 200}
                 onDirtyChange={onDirtyChange}
                 lists={state.lists}
                 busy={busy}
-                onClose={() => {
-                  if (canLeaveDetail()) setNewEditor(null);
-                }}
-                onSave={async (task) => {
-                  if (await saveTask(task)) {
+                onClose={closeDetail}
+                onDiscard={discardDetail}
+                onSave={async (task, linkHabit) => {
+                  if (await saveTask(task, linkHabit)) {
                     setNewEditor(null);
                     setSelected(task.id);
                     return true;
@@ -1700,7 +1924,7 @@ function TodayOverview({
           <button
             className="overview-habit"
             key={h.id}
-            onClick={() => onHabit(h.id)}
+            onClick={() => state.tasks.some((task) => task.habitId === h.id) ? onNavigate("habits") : onHabit(h.id)}
           >
             <i style={{ color: h.color, background: `${h.color}12` }}>
               <Icon name={h.icon} size={17} />
@@ -1708,7 +1932,7 @@ function TodayOverview({
             <span>
               {h.name}
               <small>
-                {h.checks[today] || 0} / {h.goal}회
+                {Math.min(h.checks[today] || 0, h.goal)} / {h.goal}회
               </small>
             </span>
             <span
@@ -1746,4 +1970,29 @@ function TodayOverview({
       </div>
     </aside>
   );
+}
+
+function ResponsiveTaskDetail(props: React.ComponentProps<typeof TaskDetail>) {
+  const [overlay, setOverlay] = useState(() => window.matchMedia("(max-width: 1050px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1050px)");
+    const update = () => setOverlay(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (overlay && !dialog.current?.open) dialog.current?.showModal();
+  }, [overlay]);
+  const detail = <TaskDetail {...props} />;
+  return overlay ? createPortal(
+    <dialog ref={dialog} className="detail-overlay" aria-label="할 일 편집"
+      onCancel={(event) => {
+        event.preventDefault();
+        props.onClose();
+      }}>
+      {detail}
+    </dialog>,
+    document.body
+  ) : detail;
 }

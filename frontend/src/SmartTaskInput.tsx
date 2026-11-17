@@ -43,6 +43,7 @@ export default function SmartTaskInput({
   onIgnore,
   onSubmit,
   editorRef,
+  placeholder = "할 일 입력 · 오늘, 매일, 수요일, #태그",
 }: {
   value: string;
   ignored: string[];
@@ -51,6 +52,7 @@ export default function SmartTaskInput({
   onIgnore: (key: string) => void;
   onSubmit: () => void;
   editorRef: React.RefObject<HTMLDivElement | null>;
+  placeholder?: string;
 }) {
   const composing = useRef(false);
   const caret = useRef<number | null>(null);
@@ -107,6 +109,28 @@ export default function SmartTaskInput({
     editorRef.current?.focus();
     return true;
   }
+  function cancelPreviousChip() {
+    const root = editorRef.current;
+    if (!root || !window.getSelection()?.isCollapsed) return false;
+    const position = offset(root);
+    if (position === null) return false;
+    const token = parsed.tokens.find((item) => !item.ignored && item.end === position);
+    if (!token) return false;
+    caret.current = position;
+    onIgnore(token.key);
+    return true;
+  }
+  useLayoutEffect(() => {
+    const root = editorRef.current;
+    const beforeInput = (event: InputEvent) => {
+      if (event.inputType === "deleteContentBackward" && event.cancelable &&
+          !event.isComposing && !composing.current && cancelPreviousChip()) {
+        event.preventDefault();
+      }
+    };
+    root?.addEventListener("beforeinput", beforeInput);
+    return () => root?.removeEventListener("beforeinput", beforeInput);
+  });
   return (
     <div
       ref={editorRef}
@@ -114,7 +138,8 @@ export default function SmartTaskInput({
       role="textbox"
       aria-label="빠른 할 일 추가"
       aria-multiline="false"
-      data-placeholder="할 일 입력 · 오늘, 매일, 수요일, #태그"
+      data-placeholder={placeholder}
+      enterKeyHint="done"
       contentEditable
       suppressContentEditableWarning
       spellCheck={false}
@@ -135,6 +160,10 @@ export default function SmartTaskInput({
           e.target !== editorRef.current &&
           cancel(e.target)
         ) {
+          e.preventDefault();
+          return;
+        }
+        if (e.key === "Backspace" && cancelPreviousChip()) {
           e.preventDefault();
           return;
         }

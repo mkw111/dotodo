@@ -11,8 +11,11 @@ export default {
       supportsTablet: true,
       infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
     },
-    android: { package: "com.dotodo.app" },
-    plugins: ["./plugins/withLocalWebView"],
+    android: {
+      package: "com.dotodo.app",
+      permissions: ["android.permission.SCHEDULE_EXACT_ALARM"],
+    },
+    plugins: ["expo-notifications", "./plugins/withLocalWebView"],
     extra: {
       note: "Local development shell. Use an HTTPS web URL and disable Android cleartext before distribution.",
     },

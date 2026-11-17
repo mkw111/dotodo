@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import Modal from "./Modal";
 import { validateWorkspace } from "./model";
@@ -25,6 +25,15 @@ export default function SettingsView({
       ? "unavailable"
       : Notification.permission
   );
+  const app = Boolean(window.ReactNativeWebView);
+  const [appPermission, setAppPermission] = useState("loading");
+  useEffect(() => {
+    if (!window.ReactNativeWebView) return;
+    const update = (event: Event) => setAppPermission((event as CustomEvent<string>).detail);
+    window.addEventListener("dotodo:reminder-status", update);
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: "DOTODO_REMINDER_STATUS" }));
+    return () => window.removeEventListener("dotodo:reminder-status", update);
+  }, []);
   const [fileError, setFileError] = useState("");
   function exportData() {
     const blob = new Blob([JSON.stringify(state, null, 2)], {
@@ -195,18 +204,32 @@ export default function SettingsView({
       <div className="settings-card">
         <h3>
           <Icon name="bell" size={18} />
-          브라우저 알림
+          {app ? "앱 알림" : "브라우저 알림"}
         </h3>
         <div className="setting-row">
           <span>
             일정 알림
             <small>
-              웹이 열려 있는 동안 지정한 날짜·시간에 알림을 표시해요.
-              <br />
-              모바일 백그라운드 푸시와는 별도입니다.
+              {app ? "일정 상세에서 예약한 알림을 앱을 닫아도 받아요."
+                : "웹이 열려 있는 동안 일정 시작 시간에 알림을 표시해요. 앱에서 받을 알림은 일정 상세에서 설정할 수 있어요."}
+              {app && appPermission === "error" && " 알림 예약에 실패했어요. 다시 시도해 주세요."}
             </small>
           </span>
-          <button
+          {app ? (
+            <button className="btn small"
+              disabled={appPermission === "granted" || appPermission === "loading"}
+              onClick={() => {
+                window.ReactNativeWebView?.postMessage(JSON.stringify({
+                  type: appPermission === "blocked" ? "DOTODO_REMINDER_SETTINGS" :
+                    appPermission === "error" ? "DOTODO_REMINDER_STATUS" : "DOTODO_REMINDER_PERMISSION",
+                }));
+              }}>
+              {appPermission === "granted" ? "허용됨" :
+                appPermission === "blocked" ? "기기 설정 열기" :
+                appPermission === "error" ? "다시 시도" :
+                appPermission === "loading" ? "확인 중" : "알림 허용"}
+            </button>
+          ) : <button
             className="btn small"
             disabled={permission === "unavailable" || permission === "granted"}
             onClick={async () => {
@@ -224,7 +247,7 @@ export default function SettingsView({
               : permission === "denied"
               ? "브라우저에서 차단됨"
               : "알림 허용"}
-          </button>
+          </button>}
         </div>
       </div>
       <div className="settings-card">

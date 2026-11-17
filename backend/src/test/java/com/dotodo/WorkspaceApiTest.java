@@ -48,9 +48,25 @@ class WorkspaceApiTest {
         ObjectNode task=((ArrayNode)data.get("tasks")).addObject();
         task.put("id","timed-task").put("title","시간표 일정").put("notes","").put("listId","work").put("date","2026-10-28").put("time","14:00").put("durationMinutes",60).put("priority",0).put("repeat","none").put("completed",true).put("completedAt","2026-10-28T05:00:00Z").putNull("deletedAt").put("createdAt","2026-10-28T04:00:00Z").put("order",1);
         task.putArray("tags");task.putArray("checklist");
+        task.put("reminderMinutes", 10);
+        ObjectNode allDay = task.deepCopy();
+        allDay.put("id", "multi-day").put("time", "").put("endDate", "2026-11-02").put("priority", 4);
+        allDay.remove("reminderMinutes");
+        allDay.put("repeat", "daily").put("habitId", "linked-habit");
+        ((ArrayNode) data.get("habits")).addObject()
+            .put("id", "linked-habit").put("name", "매일 독서").put("icon", "habit")
+            .put("color", "#4776e6").put("goal", 1).putObject("checks");
+        ((ArrayNode) data.get("tasks")).add(allDay);
+        data.putObject("calendarPlans").put("2026", "연간 목표").put("2026-10", "월간 목표");
         ObjectNode reward=data.putArray("rewards").addObject().put("id","task:timed-task").put("type","task").put("title","시간표 일정").put("xp",20).put("earnedAt","2026-10-28T05:00:00Z").put("active",true);
         mvc.perform(put("/api/workspace").contentType("application/json").content(snapshot.toString())).andExpect(status().isOk()).andExpect(jsonPath("$.data.tasks[0].durationMinutes").value(60)).andExpect(jsonPath("$.data.rewards[0].xp").value(20));
-        snapshot=load(); ((ObjectNode)snapshot.path("data").path("tasks").get(0)).put("durationMinutes",0);
+        snapshot = load();
+        assertEquals(10, snapshot.path("data").path("tasks").get(0).path("reminderMinutes").asInt());
+        assertEquals("linked-habit", snapshot.path("data").path("tasks").get(1).path("habitId").asText());
+        assertEquals(4, snapshot.path("data").path("tasks").get(1).path("priority").asInt());
+        assertEquals("2026-11-02", snapshot.path("data").path("tasks").get(1).path("endDate").asText());
+        assertEquals("월간 목표", snapshot.path("data").path("calendarPlans").path("2026-10").asText());
+        ((ObjectNode)snapshot.path("data").path("tasks").get(0)).put("durationMinutes",0);
         mvc.perform(put("/api/workspace").contentType("application/json").content(snapshot.toString())).andExpect(status().isBadRequest());
         snapshot=load(); ((ObjectNode)snapshot.path("data").path("rewards").get(0)).put("xp",999);
         mvc.perform(put("/api/workspace").contentType("application/json").content(snapshot.toString())).andExpect(status().isBadRequest());

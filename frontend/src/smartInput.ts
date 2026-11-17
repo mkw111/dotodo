@@ -61,7 +61,7 @@ export function recognizeInput(
   let repeatStart = "";
   // Longest phrases first; whitespace boundaries keep words such as 오늘의/내일의 intact.
   const pattern =
-    /(^|\s)(다음\s*주\s*[월화수목금토일]요일|이번\s*주\s*[월화수목금토일]요일|매주\s*[월화수목금토일]요일|평일마다|매\s*평일|매일|매주|매월|오늘|내일|모레|글피|이번\s*주|다음\s*주|[월화수목금토일]요일|\d{4}-\d{2}-\d{2}|(?:오전|오후)\s*\d{1,2}시(?:\s*\d{1,2}분)?|\d{1,2}:\d{2}|#[^\s#]+|![1-3])(?=\s|$)/g;
+    /(^|\s)(다음\s*주\s*[월화수목금토일]요일|이번\s*주\s*[월화수목금토일]요일|매주\s*[월화수목금토일]요일|평일마다|매\s*평일|매일|매주|매월|오늘|내일|모레|글피|이번\s*주|다음\s*주|[월화수목금토일]요일|\d{4}-\d{2}-\d{2}|(?:오전|오후)\s*\d{1,2}시(?:\s*\d{1,2}분)?|\d{1,2}:\d{2}|#[^\s#]+|![1-4])(?=\s|$)/g;
   for (const match of text.matchAll(pattern)) {
     const raw = match[2];
     const word = raw.replace(/\s/g, "");
@@ -74,9 +74,9 @@ export function recognizeInput(
     if (word.startsWith("#")) {
       kind = "tag";
       description = `태그 ${word.slice(1)}`;
-    } else if (/^![1-3]$/.test(word)) {
+    } else if (/^![1-4]$/.test(word)) {
       kind = "priority";
-      description = ["", "높은 우선순위", "보통 우선순위", "낮은 우선순위"][
+      description = ["", "높은 우선순위", "보통 우선순위", "낮은 우선순위", "가장 낮은 우선순위"][
         Number(word[1])
       ];
     } else if (/^\d{1,2}:\d{2}$/.test(word)) {

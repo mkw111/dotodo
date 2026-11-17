@@ -14,6 +14,14 @@ public class WorkspaceValidator {
         try {
             require(w != null && w.isObject() && w.path("schema").asInt() == 2);
             array(w.get("lists"), 200); array(w.get("tasks"), 10000); array(w.get("habits"), 200); array(w.get("sessions"), 50000);
+            if (w.has("calendarPlans")) {
+                JsonNode plans = w.get("calendarPlans");
+                require(plans.isObject() && plans.size() <= 1200);
+                plans.fields().forEachRemaining(entry -> require(
+                    entry.getKey().matches("[0-9]{4}(-(?:0[1-9]|1[0-2]))?")
+                    && entry.getValue().isTextual() && entry.getValue().asText().length() <= 3000
+                ));
+            }
             if(w.has("rewards")) {
                 array(w.get("rewards"),100000); Set<String> rewardIds = new HashSet<>();
                 for(JsonNode r:w.get("rewards")) require(text(r,"id",1,180) && rewardIds.add(r.get("id").asText()) && text(r,"type",1,10) && Set.of("task","habit","focus","quest").contains(r.get("type").asText()) && text(r,"title",0,150) && integer(r,"xp",1,60) && bool(r,"active") && stamp(r,"earnedAt",false));
@@ -21,18 +29,26 @@ public class WorkspaceValidator {
             Set<String> lists = new HashSet<>(); lists.add("inbox");
             for (JsonNode l : w.get("lists")) { require(text(l,"id",1,100) && lists.add(l.get("id").asText())); require(text(l,"name",1,50) && color(l,"color") && text(l,"icon",1,30)); }
             unique(w.get("tasks")); unique(w.get("habits")); unique(w.get("sessions"));
+            Set<String> habits = new HashSet<>();
+            for (JsonNode h : w.get("habits")) habits.add(h.path("id").asText());
             for (JsonNode t : w.get("tasks")) {
                 require(text(t,"title",1,150) && !t.get("title").asText().isBlank() && text(t,"notes",0,20000));
                 require(text(t,"listId",1,100) && lists.contains(t.get("listId").asText()) && date(t,"date",true));
                 require(text(t,"time",0,5) && (t.get("time").asText().isEmpty() || t.get("time").asText().matches("([01]\\d|2[0-3]):[0-5]\\d")));
-                require(integer(t,"priority",0,3) && bool(t,"completed") && stamp(t,"completedAt",true) && stamp(t,"deletedAt",true) && stamp(t,"createdAt",false));
+                if (t.has("endDate")) require(date(t, "endDate", false)
+                    && !t.get("date").asText().isEmpty()
+                    && t.get("endDate").asText().compareTo(t.get("date").asText()) >= 0
+                    && t.get("time").asText().isEmpty());
+                require(integer(t,"priority",0,4) && bool(t,"completed") && stamp(t,"completedAt",true) && stamp(t,"deletedAt",true) && stamp(t,"createdAt",false));
                 require(t.path("order").isNumber() && Double.isFinite(t.get("order").asDouble()));
                 require(text(t,"repeat",1,20) && Set.of("none","daily","weekdays","weekly","monthly").contains(t.get("repeat").asText()));
                 require(t.get("repeat").asText().equals("none") || !t.get("date").asText().isEmpty());
                 array(t.get("tags"),30); for (JsonNode tag : t.get("tags")) require(tag.isTextual() && !tag.asText().isEmpty() && tag.asText().length() <= 40);
                 array(t.get("checklist"),100); unique(t.get("checklist")); for (JsonNode c : t.get("checklist")) require(text(c,"title",1,150) && !c.get("title").asText().isBlank() && bool(c,"done"));
+                if (t.has("habitId")) require(text(t, "habitId", 1, 100) && habits.contains(t.get("habitId").asText()));
                 if(t.has("recurrenceSource")) require(text(t,"recurrenceSource",1,100));
                 if(t.has("repeatDay")) require(integer(t,"repeatDay",1,31));
+                if (t.has("reminderMinutes")) require(integer(t, "reminderMinutes", 0, 10080));
                 if(t.has("durationMinutes")) require(integer(t,"durationMinutes",15,720));
             }
             for (JsonNode h : w.get("habits")) {

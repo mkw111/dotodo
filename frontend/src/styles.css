@@ -1549,7 +1549,7 @@ button:active {
 }
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  grid-template-columns: repeat(5, minmax(190px, 1fr));
   gap: 14px;
   margin-top: 20px;
   overflow-x: auto;
@@ -3510,7 +3510,7 @@ button:active {
     font-size: 8px;
   }
   .kanban-board {
-    grid-template-columns: repeat(4, 220px);
+    grid-template-columns: repeat(5, 220px);
   }
 }
 .task-title-text {

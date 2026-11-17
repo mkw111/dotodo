@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
+  Linking,
   BackHandler,
   Platform,
   Pressable,
@@ -11,6 +13,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
+import { readReminders, reminderPermission, subscribeToReminderOpens, syncReminders } from "./reminders";
 
 const WEB_URL =
   process.env.EXPO_PUBLIC_WEB_URL ||
@@ -24,6 +27,41 @@ export default function App() {
   const [appCanGoBack, setAppCanGoBack] = useState(false);
   const [dark, setDark] = useState(false);
   const [failed, setFailed] = useState(false);
+  const latestReminders = useRef<ReturnType<typeof readReminders>>(null);
+  const reminderQueue = useRef(Promise.resolve());
+  const pendingTask = useRef<string | null>(null);
+  function emit(name: string, detail: unknown) {
+    web.current?.injectJavaScript(
+      `window.dispatchEvent(new CustomEvent(${JSON.stringify(name)}, {detail: ${JSON.stringify(detail)}})); true;`
+    );
+  }
+  function reconcile(requestPermission = false) {
+    reminderQueue.current = reminderQueue.current.then(async () => {
+      const permission = await reminderPermission(requestPermission);
+      emit("dotodo:reminder-status", permission);
+      if (latestReminders.current) {
+        await syncReminders(latestReminders.current, permission === "granted");
+      }
+    }).catch(() => {
+      emit("dotodo:reminder-status", "error");
+    });
+  }
+  useEffect(() => {
+    const unsubscribe = subscribeToReminderOpens((id) => {
+      pendingTask.current = id;
+      emit("dotodo:open-reminder", id);
+    });
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        reconcile();
+        emit("dotodo:refresh-reminders", null);
+      }
+    });
+    return () => {
+      unsubscribe();
+      appState.remove();
+    };
+  }, []);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
@@ -79,13 +117,29 @@ export default function App() {
             onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
             onMessage={(event) => {
               try {
+                if (new URL(event.nativeEvent.url).origin !== origin) return;
                 const message = JSON.parse(event.nativeEvent.data);
                 if (message.type === "DOTODO_STATE") {
                   setAppCanGoBack(message.canGoBack === true);
                   setDark(message.dark === true);
+                } else if (message.type === "DOTODO_REMINDERS") {
+                  const reminders = readReminders(message.reminders);
+                  if (!reminders) return;
+                  latestReminders.current = reminders;
+                  reconcile();
+                  if (pendingTask.current) emit("dotodo:open-reminder", pendingTask.current);
+                } else if (message.type === "DOTODO_REMINDER_OPENED" &&
+                    pendingTask.current === message.taskId) {
+                  pendingTask.current = null;
+                } else if (message.type === "DOTODO_REMINDER_STATUS") {
+                  reconcile();
+                } else if (message.type === "DOTODO_REMINDER_PERMISSION") {
+                  reconcile(true);
+                } else if (message.type === "DOTODO_REMINDER_SETTINGS") {
+                  void Linking.openSettings().catch(() => emit("dotodo:reminder-status", "error"));
                 }
               } catch {
-                /* Ignore malformed messages; the bridge accepts UI state only. */
+                /* Ignore malformed messages from the web view. */
               }
             }}
             onError={() => setFailed(true)}

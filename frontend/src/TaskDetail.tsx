@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import SmartTaskInput from "./SmartTaskInput";
 import { recognizeInput } from "./smartInput";
 import Icon from "./Icon";
-import { uid } from "./model";
+import { moveTaskDate, uid } from "./model";
 import {
   priorityNames,
   repeatNames,
@@ -18,6 +18,8 @@ export default function TaskDetail({
   lists,
   busy,
   onClose,
+  onDiscard,
+  habitLimitReached = false,
   onSave,
   onToggle,
   onDelete,
@@ -29,14 +31,21 @@ export default function TaskDetail({
   lists: TaskList[];
   busy: boolean;
   onClose: () => void;
-  onSave: (task: Task) => Promise<boolean>;
-  onToggle: (task: Task) => Promise<boolean>;
+  onDiscard: () => void;
+  habitLimitReached?: boolean;
+  onSave: (task: Task, linkHabit?: boolean) => Promise<boolean>;
+  onToggle: (task: Task, linkHabit?: boolean) => Promise<boolean>;
   onDelete: () => void;
   onFocus: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   isNew?: boolean;
 }) {
+  const [customReminder, setCustomReminder] = useState(
+    task.reminderMinutes !== undefined && ![0, 10, 30].includes(task.reminderMinutes)
+  );
   const [draft, setDraft] = useState(task);
+  const [habitDraft, setHabitDraft] = useState<boolean | null>(null);
+  const linkHabit = (habitDraft ?? Boolean(task.habitId)) && draft.repeat === "daily" && Boolean(draft.date);
   const [dirty, setDirty] = useState(false);
   const [item, setItem] = useState("");
   const [tags, setTags] = useState(task.tags.join(", "));
@@ -52,12 +61,18 @@ export default function TaskDetail({
     const parsed = recognizeInput(text, localDate(), keys);
     setRawTitle(text);
     setIgnored(keys);
+    const date = parsed.date || (parsed.dateRecognitionDisabled ? "" :
+      recognized.date ? task.date : draft.date);
+    const time = date ? parsed.time || (recognized.time ? task.time : draft.time) : "";
+    const rangeSource = recognized.time && !parsed.time ? task : draft;
     change({
+      ...moveTaskDate(rangeSource, date),
       title: parsed.title,
-      date: parsed.date || (parsed.dateRecognitionDisabled ? "" : task.date),
-      time: parsed.time || task.time,
-      repeat: parsed.repeat !== "none" ? parsed.repeat : task.repeat,
-      priority: parsed.priority || task.priority,
+      time,
+      ...(time ? { endDate: undefined } : {}),
+      repeat: date ? parsed.repeat !== "none" ? parsed.repeat :
+        recognized.repeat !== "none" ? task.repeat : draft.repeat : "none",
+      priority: parsed.priority || (recognized.priority ? task.priority : draft.priority),
     });
   }
   useEffect(() => {
@@ -77,6 +92,8 @@ export default function TaskDetail({
   const value = () => ({
     ...draft,
     title: draft.title.trim(),
+    endDate: draft.endDate && draft.endDate > draft.date && !draft.time ? draft.endDate : undefined,
+    reminderMinutes: draft.date && draft.time ? draft.reminderMinutes : undefined,
     tags: [
       ...new Set([
         ...(isNew ? recognized.tags : []),
@@ -88,7 +105,11 @@ export default function TaskDetail({
     ].slice(0, 30),
   });
   async function save() {
-    if (await onSave(value())) setDirty(false);
+    if (!draft.title.trim() || (draft.endDate && draft.endDate < draft.date)) return;
+    if (await onSave(value(), linkHabit)) {
+      setHabitDraft(null);
+      setDirty(false);
+    }
   }
   function addItem() {
     if (!item.trim() || draft.checklist.length >= 100) return;
@@ -131,7 +152,10 @@ export default function TaskDetail({
             aria-label={draft.completed ? "완료 취소" : "할 일 완료"}
             disabled={busy || isNew}
             onClick={async () => {
-              if (await onToggle(value())) setDirty(false);
+              if (await onToggle(value(), linkHabit)) {
+                setHabitDraft(null);
+                setDirty(false);
+              }
             }}
           >
             {draft.completed && <Icon name="check" size={13} />}
@@ -173,6 +197,8 @@ export default function TaskDetail({
                     : undefined,
                   repeat: e.target.value ? draft.repeat : "none",
                   time: e.target.value ? draft.time : "",
+                  endDate: !e.target.value ? undefined :
+                    draft.endDate && draft.endDate < e.target.value ? e.target.value : draft.endDate,
                 })
               }
             />
@@ -184,10 +210,18 @@ export default function TaskDetail({
               type="time"
               disabled={!draft.date}
               value={draft.time}
-              onChange={(e) => change({ time: e.target.value })}
+              onChange={(e) => change({ time: e.target.value, endDate: e.target.value ? undefined : draft.endDate })}
             />
           </label>
         </div>
+        {draft.date && !draft.time && (
+          <label className="detail-select">
+            <span>종일 종료일</span>
+            <input type="date" aria-label="종일 종료일" min={draft.date}
+              value={draft.endDate ?? draft.date}
+              onChange={(event) => change({ endDate: event.target.value || undefined })} />
+          </label>
+        )}
         <div className="detail-fields">
           <label>
             <Icon name="flag" size={16} />
@@ -226,6 +260,23 @@ export default function TaskDetail({
             </select>
           </label>
         </div>
+        {draft.repeat === "daily" && draft.date && (
+          <label className="detail-select linked-habit-option">
+            <Icon name="habit" size={16} />
+            <span>
+              습관에 연동
+              <small>{habitLimitReached && !task.habitId
+                ? "습관은 200개까지 만들 수 있어요."
+                : "완료 기록을 습관 탭에도 표시해요."}</small>
+            </span>
+            <input type="checkbox" aria-label="습관에 연동" checked={linkHabit}
+              disabled={busy || (habitLimitReached && !task.habitId)}
+              onChange={(event) => {
+                setHabitDraft(event.target.checked);
+                setDirty(true);
+              }} />
+          </label>
+        )}
         {isNew && recognized.tokens.length > 0 && (
           <div className="recognition-preview">
             <small>강조된 단어를 누르면 인식을 취소합니다.</small>
@@ -238,6 +289,40 @@ export default function TaskDetail({
               </button>
             )}
           </div>
+        )}
+        <label className="detail-select">
+          <Icon name="bell" size={16} />
+          <select
+            aria-label="앱 알림"
+            disabled={!draft.date || !draft.time}
+            value={draft.reminderMinutes === undefined ? "" :
+              customReminder ? "custom" : draft.reminderMinutes}
+            onChange={(event) => {
+              const value = event.target.value;
+              setCustomReminder(value === "custom");
+              change({ reminderMinutes: value === "" ? undefined : value === "custom" ? 15 : Number(value) });
+            }}
+          >
+            <option value="">앱 알림 없음</option>
+            <option value="0">시작 시간에 알림</option>
+            <option value="10">10분 전 알림</option>
+            <option value="30">30분 전 알림</option>
+            <option value="custom">직접 지정</option>
+          </select>
+        </label>
+        {draft.date && draft.time && customReminder && (
+          <label className="duration-field">
+            <span>시작 전</span>
+            <input type="number" min={1} max={10080} step={1}
+              aria-label="알림 시간(분 전)" value={draft.reminderMinutes}
+              onChange={(event) => {
+                const minutes = event.target.valueAsNumber;
+                if (Number.isInteger(minutes) && minutes >= 1 && minutes <= 10080) {
+                  change({ reminderMinutes: minutes });
+                }
+              }} />
+            <span>분에 알림</span>
+          </label>
         )}
         <label className="duration-field">
           <Icon name="clock" size={16} />
@@ -387,12 +472,16 @@ export default function TaskDetail({
           <Icon name="trash" size={17} />
         </button>
         <span>{dirty ? "변경사항이 있어요" : "모든 변경사항 저장됨"}</span>
+        {dirty && (
+          <button className="btn small" disabled={busy} onClick={onDiscard}>편집 취소</button>
+        )}
         <button
           className="btn primary small"
           disabled={
             busy ||
             !dirty ||
             !draft.title.trim() ||
+            Boolean(draft.endDate && draft.endDate < draft.date) ||
             (draft.durationMinutes !== undefined &&
               (!Number.isInteger(draft.durationMinutes) ||
                 draft.durationMinutes < 15 ||

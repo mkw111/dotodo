@@ -17,6 +17,7 @@ export default function HabitsView({
   const [editing, setEditing] = useState<Habit | "new" | null>(null);
   const [week, setWeek] = useState(0);
   const today = localDate();
+  const linkedHabitIds = new Set(state.tasks.map((task) => task.habitId));
   const days = Array.from({ length: 7 }, (_, i) =>
     addDays(today, -6 + i + week * 7)
   );
@@ -24,7 +25,7 @@ export default function HabitsView({
     (h) => (h.checks[today] || 0) >= h.goal
   ).length;
   async function check(h: Habit, day: string, reset = false) {
-    if (day > today) return;
+    if (day > today || linkedHabitIds.has(h.id)) return;
     await commit((w) => ({
       ...w,
       habits: w.habits.map((x) =>
@@ -116,7 +117,8 @@ export default function HabitsView({
               <div>
                 <strong>{h.name}</strong>
                 <small>
-                  매일 {h.goal}회 <b>·</b> {streak(h.checks, h.goal)}일 연속
+                  {linkedHabitIds.has(h.id) ? "할 일 연동" : `매일 ${h.goal}회`}
+                  {" "}<b>·</b> {streak(h.checks, h.goal)}일 연속
                 </small>
               </div>
             </button>
@@ -128,14 +130,18 @@ export default function HabitsView({
                   className={`habit-check ${n >= h.goal ? "achieved" : ""} ${
                     n > 0 && n < h.goal ? "partial" : ""
                   }`}
-                  disabled={busy || day > today}
+                  data-linked={linkedHabitIds.has(h.id) || undefined}
+                  disabled={busy || day > today || linkedHabitIds.has(h.id)}
                   style={{ "--habit-color": h.color } as React.CSSProperties}
                   onClick={() => check(h, day, n >= h.goal)}
                   aria-label={`${h.name} ${day} ${
-                    n >= h.goal ? "완료 취소" : `체크 ${n}/${h.goal}`
+                    linkedHabitIds.has(h.id)
+                      ? n >= h.goal ? "완료됨 · 할 일 연동" : "미완료 · 할 일 연동"
+                      : n >= h.goal ? "완료 취소" : `체크 ${n}/${h.goal}`
                   }`}
                   title={
-                    n >= h.goal
+                    linkedHabitIds.has(h.id) ? "연결한 할 일에서 완료를 기록하세요."
+                      : n >= h.goal
                       ? "클릭하면 완료 취소"
                       : `클릭하면 1회 추가 (${n}/${h.goal})`
                   }
@@ -208,6 +214,7 @@ export default function HabitsView({
         <HabitEditor
           key={typeof editing === "string" ? "new" : editing.id}
           habit={editing === "new" ? null : editing}
+          linked={editing !== "new" && linkedHabitIds.has(editing.id)}
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={async (habit) => {
@@ -237,6 +244,9 @@ export default function HabitsView({
                   (w) => ({
                     ...w,
                     habits: w.habits.filter((h) => h.id !== editing.id),
+                    tasks: w.tasks.map((task) => task.habitId === editing.id ? {
+                      ...task, habitId: undefined,
+                    } : task),
                   }),
                   "습관을 삭제했어요"
                 )
@@ -250,12 +260,14 @@ export default function HabitsView({
 }
 function HabitEditor({
   habit,
+  linked,
   busy,
   onClose,
   onSave,
   onDelete,
 }: {
   habit: Habit | null;
+  linked: boolean;
   busy: boolean;
   onClose: () => void;
   onSave: (h: Habit) => void;
@@ -292,11 +304,12 @@ function HabitEditor({
           />
         </label>
         <label className="form-field">
-          하루 목표 횟수
+          {linked ? "할 일 완료로 기록되는 하루 목표 횟수" : "하루 목표 횟수"}
           <input
             type="number"
             min={1}
             max={100}
+            disabled={linked}
             required
             value={goal}
             onChange={(e) => setGoal(Number(e.target.value))}
