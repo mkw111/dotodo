@@ -7,7 +7,7 @@ pipeline {
     stages {
         stage('Build, test and publish') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dotodo-dockerhub',
+                withCredentials([usernamePassword(credentialsId: 'dockerCredential',
                     usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
                     sh 'sh deploy/publish-image.sh frontend'
                 }

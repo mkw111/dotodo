@@ -34,7 +34,7 @@ pipeline {
             agent { label 'dotodo-docker' }
             steps {
                 unstash 'compose'
-                withCredentials([usernamePassword(credentialsId: 'dotodo-dockerhub',
+                withCredentials([usernamePassword(credentialsId: 'dockerCredential',
                     usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
                     sh '''
                         set +x
