@@ -19,6 +19,7 @@ export type Task = {
   order: number;
   recurrenceSource?: string;
   habitId?: string;
+  actual?: boolean;
   repeatDay?: number;
   durationMinutes?: number;
   reminderMinutes?: number;

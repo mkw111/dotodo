@@ -168,7 +168,7 @@ export default function TaskDetail({
               onChange={(text) => smartChange(text)}
               onIgnore={(key) => smartChange(rawTitle, [...ignored, key])}
               onSubmit={() => {
-                if (draft.title.trim()) void save();
+                titleEditor.current?.blur();
               }}
               editorRef={titleEditor}
             />
@@ -464,16 +464,16 @@ export default function TaskDetail({
         </div>
       </div>
       <footer className="detail-footer">
-        <button
-          className="icon-btn"
-          onClick={onDelete}
-          aria-label="휴지통으로 이동"
-        >
-          <Icon name="trash" size={17} />
-        </button>
-        <span>{dirty ? "변경사항이 있어요" : "모든 변경사항 저장됨"}</span>
-        {dirty && (
-          <button className="btn small" disabled={busy} onClick={onDiscard}>편집 취소</button>
+        {!isNew && (
+          <button className="icon-btn" onClick={onDelete} aria-label="휴지통으로 이동">
+            <Icon name="trash" size={17} />
+          </button>
+        )}
+        <span>{isNew ? "저장 전 일정" : dirty ? "변경사항이 있어요" : "모든 변경사항 저장됨"}</span>
+        {(isNew || dirty) && (
+          <button className="btn small" disabled={busy} onClick={onDiscard}>
+            {isNew ? "취소" : "편집 취소"}
+          </button>
         )}
         <button
           className="btn primary small"

@@ -13,14 +13,20 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
+import embeddedWeb from "./embeddedWeb";
 import { readReminders, reminderPermission, subscribeToReminderOpens, syncReminders } from "./reminders";
 
-const WEB_URL =
+const embedded = Platform.OS === "android" && Boolean(embeddedWeb);
+const WEB_URL = embedded ? "https://dotodo.invalid/" :
   process.env.EXPO_PUBLIC_WEB_URL ||
   (Platform.OS === "android"
     ? "http://10.0.2.2:5173"
     : "http://localhost:5173");
 const origin = new URL(WEB_URL).origin;
+const webSource = embedded ? { html: embeddedWeb, baseUrl: WEB_URL } : { uri: WEB_URL };
+function isAppUrl(url: string) {
+  return url === origin || url.startsWith(`${origin}/`);
+}
 export default function App() {
   const web = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -93,7 +99,7 @@ export default function App() {
             <Text style={styles.brand}>dotodo.</Text>
             <Text style={styles.title}>화면을 불러오지 못했어요</Text>
             <Text style={styles.description}>
-              웹 서버와 네트워크 연결을 확인해 주세요.
+              {embedded ? "다시 시도해 주세요." : "웹 서버와 네트워크 연결을 확인해 주세요."}
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -106,18 +112,16 @@ export default function App() {
         ) : (
           <WebView
             ref={web}
-            source={{ uri: WEB_URL }}
+            source={webSource}
             style={styles.web}
             originWhitelist={[origin]}
             onShouldStartLoadWithRequest={(request) =>
-              request.url === "about:blank" ||
-              request.url === origin ||
-              request.url.startsWith(`${origin}/`)
+              request.url === "about:blank" || isAppUrl(request.url)
             }
             onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
             onMessage={(event) => {
               try {
-                if (new URL(event.nativeEvent.url).origin !== origin) return;
+                if (!isAppUrl(event.nativeEvent.url)) return;
                 const message = JSON.parse(event.nativeEvent.data);
                 if (message.type === "DOTODO_STATE") {
                   setAppCanGoBack(message.canGoBack === true);

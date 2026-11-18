@@ -1,0 +1,5 @@
+spring:
+  datasource:
+    url: ${dotodo.db.url}
+    username: ${dotodo.db.username}
+    password: ${dotodo.db.password}

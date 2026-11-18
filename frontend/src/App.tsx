@@ -24,6 +24,7 @@ import {
   moveTaskDate,
   scheduledOn,
   saveTaskWithHabit,
+  checkHabit,
   newTask,
   remainingSeconds,
   toggleTask,
@@ -94,6 +95,7 @@ export default function App() {
   const suppressSwipeClick = useRef(false);
   const [today, setToday] = useState(localDate());
   const [completionDay, setCompletionDay] = useState("");
+  const [calendarMode, setCalendarMode] = useState<"month" | "review">("month");
   const [calendarStart, setCalendarStart] = useState(localDate());
   const dirtyDetail = useRef(false);
   const onDirtyChange = useCallback((value: boolean) => {
@@ -317,7 +319,7 @@ export default function App() {
   const displayedDay = view === "today" && !query ? homeDate ?? today : today;
   const dayTitle = displayedDay === today ? "오늘" :
     new Date(`${displayedDay}T12:00:00`).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
-  const tasks = state.tasks;
+  const tasks = state.tasks.filter((task) => !task.actual || (view === "trash" && task.deletedAt));
   const visibleTasks = tasks.filter((t) => !t.deletedAt);
   const active = visibleTasks.filter((t) => !t.completed);
   const selectedTask = tasks.find((t) => t.id === selected && !t.deletedAt);
@@ -387,9 +389,10 @@ export default function App() {
       : view === "trash"
       ? "삭제한 할 일을 복원하거나 영구 삭제할 수 있어요."
       : "머릿속의 할 일을 꺼내 놓는 공간.";
-  function navigate(next: View) {
+  function navigate(next: View, initialCalendarMode: "month" | "review" = "month") {
     if (!canLeaveDetail()) return;
     setView(next);
+    if (next === "calendar") setCalendarMode(initialCalendarMode);
     if (next === "today") setHomeDate(null);
     setQuery("");
     setSelected(null);
@@ -683,19 +686,21 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <button
-            className={`icon-btn priority-flag p${task.priority}`}
-            aria-label={`${task.title} 우선순위 변경`}
-            title={task.priority ? `우선순위 ${task.priority} · ${priorityNames[task.priority]}` : priorityNames[0]}
-            disabled={busy}
-            onClick={() =>
-              patchTask(task.id, {
-                priority: ((task.priority + 1) % 5) as Priority,
-              })
-            }
-          >
-            <Icon name="flag" size={21} flagNumber={task.priority || undefined} />
-          </button>
+          <label className={`icon-btn priority-flag priority-picker p${task.priority}`}
+            title={task.priority ? `우선순위 ${task.priority}` : "우선순위 없음"}>
+            <Icon name="flag" size={24} flagNumber={task.priority || undefined} />
+            <select aria-label={`${task.title} 우선순위 변경`}
+              value={task.priority} disabled={busy}
+              onChange={(event) => void patchTask(task.id, {
+                priority: Number(event.target.value) as Priority,
+              })}>
+              {priorityNames.map((name, priority) => (
+                <option key={priority} value={priority}>
+                  {priority ? `${priority} · ${name}` : name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
       </article>
     );
@@ -711,7 +716,7 @@ export default function App() {
           : group === "none"
           ? "할 일"
           : (task.endDate ?? task.date) && (task.endDate ?? task.date) < displayedDay
-          ? "기한이 지난 할 일"
+          ? "이월된 할 일"
           : task.date
           ? dateLabel(scheduledOn(task, displayedDay) ? displayedDay : task.date, today)
           : "날짜 없음";
@@ -719,7 +724,7 @@ export default function App() {
     }
     return [...groups].map(([label, items]) => (
       <section className="task-group" key={label}>
-        <h3 className={label === "기한이 지난 할 일" ? "overdue" : ""}>
+        <h3 className={label === "이월된 할 일" ? "overdue" : ""}>
           <Icon name="chevron" size={13} />
           {label}
           <span>{items.length}</span>
@@ -1012,6 +1017,11 @@ export default function App() {
                   <button className="icon-btn" aria-label="전날" onClick={() => shiftHome(-1)}><Icon name="left" size={17} /></button>
                   <strong>{dayTitle}</strong>
                   <button className="icon-btn" aria-label="다음 날" onClick={() => shiftHome(1)}><Icon name="right" size={17} /></button>
+                  <button className="btn small home-review-btn" onClick={() => {
+                    if (!canLeaveDetail()) return;
+                    setCalendarStart(displayedDay);
+                    navigate("calendar", "review");
+                  }}>하루 돌아보기</button>
                   {homeDate && <button className="btn small" onClick={() => {
                     if (canLeaveDetail()) {
                       setHomeDate(null);
@@ -1096,28 +1106,11 @@ export default function App() {
               {!special || query ? (
                 <>
                   {view === "today" && !query && (
-                    <section className="today-banner">
-                      <div className="sun-illustration">
-                        <Icon name="sun" size={31} />
-                      </div>
-                      <div>
-                        <h2>
-                          {progress === 100
-                            ? "오늘의 할 일을 모두 마쳤어요!"
-                            : "오늘도, 한 걸음 앞으로."}
-                        </h2>
-                        <p>작은 성취를 모아 만드는 나의 하루</p>
-                      </div>
-                      <div className="today-progress">
-                        <span>
-                          <strong>{todayDone}</strong> / {todayTotal}{" "}
-                          완료
-                        </span>
-                        <div className="thin-progress">
-                          <i style={{ width: `${progress}%` }} />
-                        </div>
-                      </div>
-                      <span className="banner-orbit" />
+                    <section className="day-summary" aria-label="하루 진행 상황">
+                      <div><strong>{todayDone}</strong><span>완료</span></div>
+                      <div><strong>{active.filter((task) => scheduledOn(task, displayedDay)).length}</strong><span>예정</span></div>
+                      <div><strong>{active.filter((task) => task.date && (task.endDate ?? task.date) < displayedDay).length}</strong><span>이월</span></div>
+                      <progress max={100} value={progress} aria-label="예정된 할 일 완료율" />
                     </section>
                   )}
                   {!home && view !== "trash" && view !== "completed" && (
@@ -1351,8 +1344,12 @@ export default function App() {
                 </>
               ) : view === "calendar" ? (
                 <CalendarView
-                  key={calendarStart}
+                  key={`${calendarStart}:${calendarMode}`}
+                  initialMode={calendarMode}
                   initialDate={calendarStart}
+                  actuals={state.tasks.filter((task) => task.actual && !task.deletedAt)}
+                  onSaveActual={saveTask}
+                  onDeleteActual={(id) => patchTask(id, { deletedAt: new Date().toISOString() }, "실행 기록을 삭제했어요")}
                   plans={state.calendarPlans ?? {}}
                   busy={busy}
                   onSavePlan={(period, text) => commit((workspace) => {
@@ -1393,36 +1390,30 @@ export default function App() {
                     {
                       title: "지금 하기",
                       description: "중요하고 급한 일",
-                      urgent: true,
-                      important: true,
+                      priority: 1 as Priority,
                       color: "red",
                     },
                     {
                       title: "계획하기",
                       description: "중요하지만 급하지 않은 일",
-                      urgent: false,
-                      important: true,
-                      color: "blue",
+                      priority: 2 as Priority,
+                      color: "amber",
                     },
                     {
                       title: "빠르게 처리하기",
                       description: "급하지만 덜 중요한 일",
-                      urgent: true,
-                      important: false,
-                      color: "amber",
+                      priority: 3 as Priority,
+                      color: "blue",
                     },
                     {
                       title: "여유 있을 때",
                       description: "급하지도 중요하지도 않은 일",
-                      urgent: false,
-                      important: false,
-                      color: "gray",
+                      priority: 4 as Priority,
+                      color: "purple",
                     },
-                  ].map((q, i) => {
+                  ].map((q) => {
                     const items = active.filter(
-                      (t) =>
-                        (t.priority === 1) === q.important &&
-                        (Boolean(t.date) && t.date <= today) === q.urgent
+                      (task) => task.priority === q.priority
                     );
                     return (
                       <section
@@ -1435,17 +1426,12 @@ export default function App() {
                           const task = tasks.find((t) => t.id === id);
                           if (task)
                             void patchTask(id, {
-                              priority: q.important ? 1 : 0,
-                              ...moveTaskDate(task, q.urgent
-                                ? today
-                                : task.date && task.date <= today
-                                ? addDays(today, 1)
-                                : task.date),
+                              priority: q.priority,
                             });
                         }}
                       >
                         <header>
-                          <span className="quadrant-number">0{i + 1}</span>
+                          <span className="quadrant-number">{q.priority}</span>
                           <div>
                             <h2>{q.title}</h2>
                             <p>{q.description}</p>
@@ -1462,8 +1448,10 @@ export default function App() {
                     );
                   })}
                   <p className="view-tip">
-                    중요도는 높은 우선순위, 긴급도는 오늘까지의 마감일을
-                    기준으로 합니다.
+                    우선순위 1~4에 따라 표시됩니다. 칸을 옮기면 우선순위가 바뀝니다.
+                    {active.some((task) => task.priority === 0) && (
+                      <span> 우선순위 미지정 {active.filter((task) => task.priority === 0).length}개는 할 일 목록에서 지정해 주세요.</span>
+                    )}
                   </p>
                 </section>
               )}
@@ -1499,25 +1487,11 @@ export default function App() {
                   navigate("calendar");
                 }}
                 onNavigate={navigate}
-                onHabit={(id) =>
-                  commit((w) => ({
-                    ...w,
-                    habits: w.habits.map((h) =>
-                      h.id === id
-                        ? {
-                            ...h,
-                            checks: {
-                              ...h.checks,
-                              [today]:
-                                (h.checks[today] || 0) >= h.goal
-                                  ? 0
-                                  : (h.checks[today] || 0) + 1,
-                            },
-                          }
-                        : h
-                    ),
-                  }))
-                }
+                onHabit={(id) => commit((workspace) => {
+                  const habit = workspace.habits.find((item) => item.id === id);
+                  return checkHabit(workspace, id, displayedDay,
+                    Boolean(habit && (habit.checks[displayedDay] || 0) >= habit.goal));
+                })}
               />
             ) : null}
           </div>
@@ -1924,7 +1898,8 @@ function TodayOverview({
           <button
             className="overview-habit"
             key={h.id}
-            onClick={() => state.tasks.some((task) => task.habitId === h.id) ? onNavigate("habits") : onHabit(h.id)}
+            onClick={() => onHabit(h.id)}
+            disabled={today > localDate()}
           >
             <i style={{ color: h.color, background: `${h.color}12` }}>
               <Icon name={h.icon} size={17} />

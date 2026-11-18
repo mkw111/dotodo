@@ -26,8 +26,14 @@ export default function TimeSchedule({
   onDuplicate,
   onSchedule,
   onAdd,
+  actualPane = false,
+  onTransfer,
+  onScroll,
 }: {
   days: string[];
+  actualPane?: boolean;
+  onTransfer?: (task: Task, time: string) => Promise<boolean>;
+  onScroll?: (element: HTMLDivElement) => void;
   tasks: Task[];
   lists: TaskList[];
   onSelect: (id: string) => void;
@@ -97,7 +103,42 @@ export default function TimeSchedule({
       durationMinutes: task.durationMinutes || 30,
     });
   }
-  function begin(event: React.PointerEvent, task: Task, resize = false, grabbedDay = task.date) {
+  function holdToMove(event: React.TouchEvent<HTMLButtonElement>, task: Task) {
+    if (saving || event.touches.length !== 1) return;
+    cleanup.current?.();
+    const target = event.currentTarget;
+    const touch = event.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    const timer = setTimeout(() => {
+      cleanup.current?.();
+      skipClick.current = true;
+      begin({
+        currentTarget: target, clientX: x, clientY: y, button: 0,
+        preventDefault() {}, stopPropagation() {},
+      }, task, false, task.date, true);
+    }, 420);
+    const move = (next: TouchEvent) => {
+      const point = next.touches[0];
+      if (next.touches.length !== 1 || !point ||
+          Math.hypot(point.clientX - x, point.clientY - y) > 9) cleanup.current?.();
+    };
+    const stop = () => cleanup.current?.();
+    cleanup.current = () => {
+      clearTimeout(timer);
+      target.removeEventListener("touchmove", move);
+      target.removeEventListener("touchend", stop);
+      target.removeEventListener("touchcancel", stop);
+      cleanup.current = null;
+    };
+    target.addEventListener("touchmove", move, { passive: true });
+    target.addEventListener("touchend", stop);
+    target.addEventListener("touchcancel", stop);
+  }
+  function begin(event: {
+    currentTarget: Element; clientX: number; clientY: number; button: number;
+    preventDefault: () => void; stopPropagation: () => void;
+  }, task: Task, resize = false, grabbedDay = task.date, touchDrag = false) {
     if (saving || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -117,7 +158,10 @@ export default function TimeSchedule({
       durationMinutes: duration,
     };
     let moved = false;
-    const move = (e: PointerEvent) => {
+    let transfer = false;
+    let validDrop = true;
+    if (touchDrag) setPreview({ ...next });
+    const move = (e: { clientX: number; clientY: number; preventDefault: () => void }) => {
       if (
         Math.abs(e.clientY - startY) + Math.abs(e.clientX - startX) < 4 &&
         !moved
@@ -136,7 +180,12 @@ export default function TimeSchedule({
       else {
         const target = document.elementFromPoint(e.clientX, e.clientY)
           ?.closest<HTMLElement>("[data-schedule-date], [data-schedule-all-day]");
-        if (!target) return;
+        transfer = Boolean(onTransfer && target?.closest("[data-actual-pane]") && target.dataset.scheduleDate);
+        validDrop = Boolean(target && (transfer || viewport.current?.contains(target)));
+        if (!target || !validDrop) {
+          setPreview(null);
+          return;
+        }
         const allDay = target.dataset.scheduleAllDay;
         const targetRect = target.getBoundingClientRect();
         next = {
@@ -147,7 +196,7 @@ export default function TimeSchedule({
           ),
         };
       }
-      setPreview({ ...next });
+      setPreview(transfer ? null : { ...next });
       const container = viewport.current;
       if (container) {
         const box = container.getBoundingClientRect();
@@ -160,13 +209,22 @@ export default function TimeSchedule({
       skipClick.current = true;
       setTimeout(() => {
         skipClick.current = false;
-      }, 100);
+      }, touchDrag ? 500 : 100);
       if (!moved) {
-        if (!resize) onSelect(task.id);
+        setPreview(null);
+        if (!resize && !touchDrag) onSelect(task.id);
+        return;
+      }
+      if (!validDrop) {
+        setPreview(null);
         return;
       }
       setSaving(true);
       try {
+        if (transfer && onTransfer) {
+          await onTransfer(task, next.time);
+          return;
+        }
         const saved = await onSchedule(task.id, {
           date: next.date,
           time: next.time,
@@ -181,13 +239,31 @@ export default function TimeSchedule({
     const cancel = () => {
       cleanup.current?.();
       setPreview(null);
+      skipClick.current = true;
+      setTimeout(() => { skipClick.current = false; }, 500);
     };
+    const touchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) { cancel(); return; }
+      const point = e.touches[0];
+      move({ clientX: point.clientX, clientY: point.clientY,
+        preventDefault: () => { if (e.cancelable) e.preventDefault(); } });
+    };
+    const touchTarget = event.currentTarget;
     cleanup.current = () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", stop);
       document.removeEventListener("pointercancel", cancel);
+      touchTarget.removeEventListener("touchmove", touchMove as EventListener);
+      touchTarget.removeEventListener("touchend", stop);
+      touchTarget.removeEventListener("touchcancel", cancel);
       cleanup.current = null;
     };
+    if (touchDrag) {
+      touchTarget.addEventListener("touchmove", touchMove as EventListener, { passive: false });
+      touchTarget.addEventListener("touchend", stop);
+      touchTarget.addEventListener("touchcancel", cancel);
+      return;
+    }
     document.addEventListener("pointermove", move, { passive: false });
     document.addEventListener("pointerup", stop, { once: true });
     document.addEventListener("pointercancel", cancel, { once: true });
@@ -196,17 +272,19 @@ export default function TimeSchedule({
     <div className="time-schedule">
       <div className="schedule-caption">
         <Icon name="clock" size={14} />
-        <span>드래그로 15분 단위 이동 · 아래쪽 손잡이로 길이 조정</span>
+        <span>길게 눌러 15분 단위 이동 · 아래쪽 손잡이로 길이 조정</span>
         <small>일정을 누르면 상세 편집</small>
       </div>
-      <div className="schedule-viewport" ref={viewport}>
+      <div className="schedule-viewport" ref={viewport}
+        data-actual-pane={actualPane || undefined}
+        onScroll={onScroll ? (event) => onScroll(event.currentTarget) : undefined}>
         <div
           className={`schedule-inner ${days.length === 1 ? "single-day" : ""}`}
         >
           <div
             className="schedule-days"
             style={{
-              gridTemplateColumns: `52px repeat(${days.length},minmax(0,1fr))`,
+              gridTemplateColumns: `var(--schedule-time-width, 52px) repeat(${days.length},minmax(0,1fr))`,
             }}
           >
             <span>
@@ -233,7 +311,7 @@ export default function TimeSchedule({
           <div
             className="schedule-all-day"
             style={{
-              gridTemplateColumns: `52px repeat(${days.length},minmax(0,1fr))`,
+              gridTemplateColumns: `var(--schedule-time-width, 52px) repeat(${days.length},minmax(0,1fr))`,
             }}
           >
             <span>종일</span>
@@ -275,7 +353,7 @@ export default function TimeSchedule({
           <div
             className="schedule-body"
             style={{
-              gridTemplateColumns: `52px repeat(${days.length},minmax(0,1fr))`,
+              gridTemplateColumns: `var(--schedule-time-width, 52px) repeat(${days.length},minmax(0,1fr))`,
               height: 24 * HOUR_HEIGHT,
               "--schedule-hour": `${HOUR_HEIGHT}px`,
             } as React.CSSProperties}
@@ -318,10 +396,10 @@ export default function TimeSchedule({
                   />
                 ))}
                 {range?.date === day && (
-                  <div className="schedule-range-highlight" style={{
+                  <div className="schedule-range-highlight" aria-label="저장 전 시간 선택" style={{
                     top: (range.start / 60) * HOUR_HEIGHT,
                     height: ((range.end - range.start) / 60) * HOUR_HEIGHT,
-                  }} />
+                  }}><span>시간 선택</span></div>
                 )}
                 {day === localDate() && (
                   <div
@@ -360,8 +438,10 @@ export default function TimeSchedule({
                       className="schedule-event-main"
                       disabled={saving}
                       onPointerDown={(e) => {
-                        if (e.pointerType !== "touch" || task.id === copyId) begin(e, task);
+                        if (e.pointerType !== "touch") begin(e, task);
                       }}
+                      onTouchStart={(event) => holdToMove(event, task)}
+                      onContextMenu={(event) => event.preventDefault()}
                       onClick={() => {
                         if (!skipClick.current) onSelect(task.id);
                       }}
@@ -399,6 +479,7 @@ export default function TimeSchedule({
                       </span>
                     </button>
                     <ScheduleActions title={task.title} disabled={saving}
+                      onTransfer={onTransfer ? () => onTransfer(task, task.time) : undefined}
                       onDuplicate={() => duplicate(task.id)} />
                     <button
                       className="schedule-move"
@@ -444,7 +525,7 @@ export default function TimeSchedule({
           <button className="btn primary small" onClick={() => {
             onAdd(range.date, timeOf(range.start), { durationMinutes: range.end - range.start });
             setRange(null);
-          }}>일정 추가</button>
+          }}>일정 작성</button>
         </div>
       )}
       {preview && (
@@ -459,10 +540,11 @@ export default function TimeSchedule({
   );
 }
 
-function ScheduleActions({ title, disabled, onDuplicate }: {
+function ScheduleActions({ title, disabled, onDuplicate, onTransfer }: {
   title: string;
   disabled: boolean;
   onDuplicate: () => Promise<void>;
+  onTransfer?: () => Promise<boolean>;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   const action = useRef<HTMLButtonElement>(null);
@@ -489,6 +571,10 @@ function ScheduleActions({ title, disabled, onDuplicate }: {
           }}>
           복제
         </button>
+        {onTransfer && <button type="button" className="btn small" onClick={() => {
+          menu.current?.hidePopover();
+          void onTransfer();
+        }}>실행에 복사</button>}
       </div>
     </>
   );

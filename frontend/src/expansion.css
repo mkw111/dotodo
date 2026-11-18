@@ -1168,7 +1168,6 @@
   outline-offset: -2px;
 }
 
-.schedule-event[data-copy] .schedule-event-main,
 .schedule-all-day-event > button:first-child {
   touch-action: none;
 }
@@ -1441,3 +1440,104 @@
 .linked-habit-option input { accent-color: var(--accent); }
 
 .habit-check[data-linked]:disabled { opacity: 1; cursor: default; }
+
+/* Readable controls and consistent interaction targets across workspace views. */
+.page-eyebrow, .workspace-footer, .banner-orbit { display: none; }
+.page-heading h1 { color: var(--text); letter-spacing: -0.04em; }
+.page-heading p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.task-title-text { font-size: 14px; line-height: 1.6; }
+.task-meta, .task-list-label { font-size: 11px; }
+.task-meta { color: var(--muted); }
+.task-row { min-height: 78px; padding-block: 16px; }
+.task-row:focus-within { background: var(--surface); }
+.task-check { min-width: 24px; min-height: 24px; }
+.task-list-picker { min-height: 40px; }
+.priority-picker { position: relative; min-width: 36px; min-height: 40px; }
+.priority-picker select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.priority-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
+.priority-picker.p0 { opacity: 0.7; }
+.day-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.day-summary > div { display: flex; align-items: baseline; gap: 9px; }
+.day-summary strong { font-size: 24px; font-weight: 600; color: var(--text); }
+.day-summary span { font-size: 12px; color: var(--muted); }
+.day-summary progress { grid-column: 1 / -1; width: 100%; height: 4px; border: 0; border-radius: 4px; overflow: hidden; accent-color: var(--accent); }
+.day-summary progress::-webkit-progress-bar { background: var(--border); }
+.day-summary progress::-webkit-progress-value { background: var(--accent); }
+.sheet-priorities button { min-height: 40px; min-width: 40px; }
+.sheet-presets summary { padding-block: 10px; font-size: 12px; }
+.detail-fields input, .detail-fields select, .detail-select select { min-height: 28px; font-size: 13px; }
+.detail-footer > span { font-size: 11px; }
+@media (max-width: 640px) {
+  .page-main { padding: 18px 16px 110px; }
+  .home-day-nav { margin-bottom: 8px; }
+  .home-day-nav strong { font-size: 14px; }
+  .home-day-nav button { min-width: 40px; min-height: 40px; }
+  .home-swipe .page-heading { margin-bottom: 16px; }
+  .home-swipe .page-heading h1 { font-size: 26px; }
+  .home-swipe .page-heading p { display: none; }
+  .task-row { gap: 8px; min-height: 86px; }
+  .task-title-text { font-size: 14px; }
+  .task-meta { font-size: 11px; gap: 5px; flex-wrap: wrap; }
+  .task-list-label { font-size: 11px; }
+  .task-list-picker { max-width: 66px; padding-inline: 2px; }
+  .task-check { min-width: 24px; min-height: 24px; }
+  .task-group > h3 { font-size: 13px; }
+  .task-view-toolbar { flex-wrap: wrap; gap: 10px; }
+  .toolbar-selects select { font-size: 11px; min-height: 32px; }
+  .mobile-bottom-nav button { font-size: 11px; min-height: 42px; gap: 5px; }
+  .home-quick-add { bottom: calc(85px + env(safe-area-inset-bottom)); }
+  .detail-fields input, .detail-fields select, .detail-select select, .notes { font-size: 16px; }
+  .detail-footer .btn { min-height: 42px; font-size: 12px; }
+}
+
+.matrix-quadrant.purple h2 { color: #9471c4; }
+.matrix-quadrant.red { border-top: 3px solid #db646e; }
+.matrix-quadrant.amber { border-top: 3px solid #bd862d; }
+.matrix-quadrant.blue { border-top: 3px solid #5683cf; }
+.matrix-quadrant.purple { border-top: 3px solid #9471c4; }
+
+.schedule-event-main { -webkit-touch-callout: none; }
+
+.schedule-range-highlight {
+  border-style: dashed;
+}
+.schedule-range-highlight > span {
+  font-size: 11px;
+  color: var(--text);
+  padding-inline: 6px;
+}
+
+.home-day-nav { flex-wrap: wrap; }
+.home-review-btn { margin-inline-start: auto; }
+.review-timeline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  --schedule-time-width: 34px;
+}
+.review-timeline h3, .review-stats h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.review-timeline h3 small { margin-inline-start: 4px; color: var(--muted); font-weight: 400; }
+.review-timeline .schedule-inner.single-day { min-width: 0; }
+.review-timeline .schedule-days,
+.review-timeline .schedule-all-day,
+.review-timeline .schedule-caption { display: none; }
+.review-timeline .schedule-viewport { height: min(58dvh, 540px); max-height: none; }
+.review-timeline .schedule-event-main strong { font-size: 11px; }
+.review-timeline .calendar-range-actions { position: static; padding: 6px; }
+.review-help { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.review-stats { padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.review-stats table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.review-stats :is(th, td) { text-align: right; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.review-stats th:first-child { text-align: left; }

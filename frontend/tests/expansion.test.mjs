@@ -8,6 +8,7 @@ import {
   moveTaskDate,
   scheduledOn,
   saveTaskWithHabit,
+  checkHabit,
   toggleTask,
   validateWorkspace,
 } from "../src/model.ts";
@@ -251,4 +252,22 @@ test("daily tasks share one linked habit through recurrence and completion undo"
   assert.ok(workspace.tasks.every((item) => item.habitId === undefined));
   assert.equal(count(), 1);
   assert.equal(validateWorkspace(workspace).tasks.length, 2);
+});
+
+test("linked habit checks complete tasks and undo without duplicating tomorrow", () => {
+  const task = newTask("독서", { date: localDate(), repeat: "daily" });
+  let state = saveTaskWithHabit(createWorkspace(false), task, true);
+  const id = state.tasks[0].habitId;
+  state = checkHabit(state, id, localDate());
+  assert.equal(state.tasks.find((item) => item.id === task.id).completed, true);
+  assert.equal(state.habits[0].checks[localDate()], 1);
+  assert.equal(state.tasks.length, 2);
+  state = checkHabit(state, id, localDate(), true);
+  assert.equal(state.tasks.find((item) => item.id === task.id).completed, false);
+  assert.equal(state.habits[0].checks[localDate()], 0);
+  state = checkHabit(state, id, localDate());
+  assert.equal(state.tasks.length, 2);
+  state = toggleTask(state, task.id);
+  assert.equal(state.habits[0].checks[localDate()], 0);
+  validateWorkspace(state);
 });

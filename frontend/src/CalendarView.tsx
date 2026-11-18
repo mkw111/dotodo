@@ -1,12 +1,17 @@
 import { useRef, useState } from "react";
 import Icon from "./Icon";
 import TimeSchedule from "./TimeSchedule";
+import DayReview from "./DayReview";
 import { useCalendarHold } from "./useCalendarHold";
 import { addDays, scheduledOn } from "./model";
 import { localDate, type Task, type TaskList } from "./types";
 
 export default function CalendarView({
   initialDate,
+  initialMode = "month",
+  actuals,
+  onSaveActual,
+  onDeleteActual,
   tasks,
   lists,
   weekStart,
@@ -20,6 +25,10 @@ export default function CalendarView({
   busy,
 }: {
   initialDate: string;
+  initialMode?: "month" | "review";
+  actuals: Task[];
+  onSaveActual: (task: Task) => Promise<boolean>;
+  onDeleteActual: (id: string) => Promise<boolean>;
   tasks: Task[];
   lists: TaskList[];
   weekStart: 0 | 1;
@@ -33,7 +42,7 @@ export default function CalendarView({
   onSchedule: (id: string, patch: Partial<Task>) => Promise<boolean>;
 }) {
   const [cursor, setCursor] = useState(initialDate);
-  const [mode, setMode] = useState<"year" | "month" | "week" | "day">("month");
+  const [mode, setMode] = useState<"year" | "month" | "week" | "day" | "review">(initialMode);
   const [picked, setPicked] = useState(initialDate);
   const monthGrid = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<{ start: string; end: string } | null>(null);
@@ -92,6 +101,7 @@ export default function CalendarView({
         <div className="calendar-heading">
           <h2>
             {current.getFullYear()}년 {mode !== "year" && `${current.getMonth() + 1}월`}
+            {mode === "review" && ` ${current.getDate()}일`}
           </h2>
           <button
             className="icon-btn"
@@ -119,7 +129,7 @@ export default function CalendarView({
           </button>
         </div>
         <div className="segmented">
-          {(["year", "month", "week", "day"] as const).map((m, i) => (
+          {(["year", "month", "week", "day", "review"] as const).map((m, i) => (
             <button
               key={m}
               className={mode === m ? "selected" : ""}
@@ -129,7 +139,7 @@ export default function CalendarView({
                 setCursor(picked);
               }}
             >
-              {["연", "월", "주", "일"][i]}
+              {["연", "월", "주", "일", "하루 돌아보기"][i]}
             </button>
           ))}
         </div>
@@ -138,7 +148,11 @@ export default function CalendarView({
         <PlanEditor key={period} period={period} plan={plans[period] ?? ""}
           onSave={onSavePlan} busy={busy} monthEnd={lastDay} />
       )}
-      {mode === "year" ? (
+      {mode === "review" ? (
+        <DayReview key={cursor} date={cursor} plans={tasks.filter((task) => !task.deletedAt)}
+          actuals={actuals} lists={lists} busy={busy} onSave={onSaveActual}
+          onDelete={onDeleteActual} planActions={{ onSelect, onDuplicate, onSchedule, onAdd }} />
+      ) : mode === "year" ? (
         <div className="year-months">
           {Array.from({ length: 12 }, (_, i) => {
             const month = `${year}-${String(i + 1).padStart(2, "0")}`;
@@ -266,10 +280,10 @@ export default function CalendarView({
             setPicked(range.start);
             onAdd(range.start, "", { endDate: range.end !== range.start ? range.end : undefined });
             setRange(null);
-          }}>일정 추가</button>
+          }}>일정 작성</button>
         </div>
       )}
-      {mode !== "year" && <div className="calendar-agenda">
+      {mode !== "year" && mode !== "review" && <div className="calendar-agenda">
         <div>
           <h3>
             {new Date(`${picked}T12:00:00`).toLocaleDateString("ko-KR", {
@@ -304,10 +318,10 @@ export default function CalendarView({
           </p>
         )}
       </div>}
-      <p className="view-tip">
+      {mode !== "review" && <p className="view-tip">
         <Icon name="edit" size={13} />
         {mode === "month" ? "날짜를 길게 누르고 끌어서 기간을 선택할 수 있어요." : "일정을 끌어서 옮길 수 있어요."}
-      </p>
+      </p>}
     </section>
   );
 }

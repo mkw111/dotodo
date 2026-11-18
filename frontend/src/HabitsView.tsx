@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Icon from "./Icon";
 import Modal from "./Modal";
-import { addDays, streak, uid } from "./model";
+import { addDays, checkHabit, streak, uid } from "./model";
 import { localDate, palette, type Habit, type Workspace } from "./types";
 import type { Commit } from "./useWorkspace";
 
@@ -25,21 +25,7 @@ export default function HabitsView({
     (h) => (h.checks[today] || 0) >= h.goal
   ).length;
   async function check(h: Habit, day: string, reset = false) {
-    if (day > today || linkedHabitIds.has(h.id)) return;
-    await commit((w) => ({
-      ...w,
-      habits: w.habits.map((x) =>
-        x.id === h.id
-          ? {
-              ...x,
-              checks: {
-                ...x.checks,
-                [day]: reset ? 0 : Math.min(x.goal, (x.checks[day] || 0) + 1),
-              },
-            }
-          : x
-      ),
-    }));
+    await commit((workspace) => checkHabit(workspace, h.id, day, reset));
   }
   return (
     <section className="habits-page">
@@ -131,17 +117,14 @@ export default function HabitsView({
                     n > 0 && n < h.goal ? "partial" : ""
                   }`}
                   data-linked={linkedHabitIds.has(h.id) || undefined}
-                  disabled={busy || day > today || linkedHabitIds.has(h.id)}
+                  disabled={busy || day > today}
                   style={{ "--habit-color": h.color } as React.CSSProperties}
                   onClick={() => check(h, day, n >= h.goal)}
                   aria-label={`${h.name} ${day} ${
-                    linkedHabitIds.has(h.id)
-                      ? n >= h.goal ? "완료됨 · 할 일 연동" : "미완료 · 할 일 연동"
-                      : n >= h.goal ? "완료 취소" : `체크 ${n}/${h.goal}`
+                    n >= h.goal ? "완료 취소" : `체크 ${n}/${h.goal}`
                   }`}
                   title={
-                    linkedHabitIds.has(h.id) ? "연결한 할 일에서 완료를 기록하세요."
-                      : n >= h.goal
+                    n >= h.goal
                       ? "클릭하면 완료 취소"
                       : `클릭하면 1회 추가 (${n}/${h.goal})`
                   }

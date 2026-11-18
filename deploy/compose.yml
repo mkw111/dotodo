@@ -1,0 +1,41 @@
+services:
+  frontend:
+    image: ${DOCKERHUB_NAMESPACE:?Docker Hub namespace required}/dotodo-frontend:${IMAGE_TAG:?Image tag required}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${DOTODO_PORT:-8088}:80"
+  backend:
+    image: ${DOCKERHUB_NAMESPACE:?Docker Hub namespace required}/dotodo-backend:${IMAGE_TAG:?Image tag required}
+    restart: unless-stopped
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SPRING_PROFILES_ACTIVE: server
+      SPRING_CONFIG_IMPORT: configtree:/run/dotodo-db/
+    volumes:
+      - type: bind
+        source: ${DOTODO_CONFIG_DIR:?Server config directory required}/db/dotodo.db.url
+        target: /run/dotodo-db/dotodo.db.url
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DOTODO_CONFIG_DIR:?Server config directory required}/db/dotodo.db.username
+        target: /run/dotodo-db/dotodo.db.username
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DOTODO_CONFIG_DIR:?Server config directory required}/db/dotodo.db.password
+        target: /run/dotodo-db/dotodo.db.password
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - default
+      - database
+networks:
+  database:
+    external: true
+    name: dotodo-database

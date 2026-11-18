@@ -136,11 +136,11 @@ export function saveTaskWithHabit(state: Workspace, task: Task, linkHabit?: bool
   };
 }
 
-export function toggleTask(state: Workspace, id: string): Workspace {
+export function toggleTask(state: Workspace, id: string, completedDay?: string): Workspace {
   const task = state.tasks.find((t) => t.id === id);
   if (!task || task.deletedAt) return state;
   const completed = !task.completed;
-  const completedAt = completed ? new Date().toISOString() : null;
+  const completedAt = completed ? (completedDay ? new Date(`${completedDay}T12:00:00`).toISOString() : new Date().toISOString()) : null;
   let tasks = state.tasks.map((t) =>
     t.id === id
       ? {
@@ -189,6 +189,41 @@ export function toggleTask(state: Workspace, id: string): Workspace {
     } : habit),
   };
 }
+export function checkHabit(state: Workspace, id: string, day: string, reset = false): Workspace {
+  const habit = state.habits.find((item) => item.id === id);
+  if (!habit || !validDate(day) || day > localDate()) return state;
+  const linked = state.tasks.filter((task) => task.habitId === id && !task.deletedAt);
+  let next = state;
+  if (reset) {
+    for (const task of linked) {
+      if (task.completed && task.completedAt && localDate(new Date(task.completedAt)) === day) {
+        next = toggleTask(next, task.id);
+      }
+    }
+  } else if (linked.length) {
+    const task = linked.find((item) => !item.completed && item.date === day);
+    if (task) next = toggleTask(next, task.id, day);
+    else {
+      const source = linked.find((item) => item.repeat === "daily") ?? linked[0];
+      const occurrence = newTask(source.title, {
+        ...source, id: uid(), date: day, endDate: undefined,
+        completed: false, completedAt: null, deletedAt: null,
+        recurrenceSource: undefined, createdAt: new Date().toISOString(), order: Date.now(),
+        checklist: source.checklist.map((item) => ({ ...item, id: uid(), done: false })),
+      });
+      // A date-specific check must not generate a second future recurring occurrence.
+      next = toggleTask({ ...next, tasks: [...next.tasks, { ...occurrence, repeat: "none" }] }, occurrence.id, day);
+    }
+  }
+  return {
+    ...next,
+    habits: next.habits.map((item) => item.id === id ? {
+      ...item, checks: { ...item.checks, [day]: reset ? 0 : Math.min(100,
+        Math.max(item.checks[day] || 0, (habit.checks[day] || 0) + 1)) },
+    } : item),
+  };
+}
+
 export function matches(task: Task, view: View, today = localDate()): boolean {
   if (view === "trash") return Boolean(task.deletedAt);
   if (task.deletedAt) return false;
@@ -454,6 +489,7 @@ export function validateWorkspace(value: unknown): Workspace {
   if (
     !w.tasks.every(
       (t) =>
+        (t.actual === undefined || typeof t.actual === "boolean") &&
         str(t.title, 150, 1) &&
         t.title.trim() &&
         str(t.notes, 20000) &&
@@ -486,7 +522,7 @@ export function validateWorkspace(value: unknown): Workspace {
             t.reminderMinutes >= 0 && t.reminderMinutes <= 10080)) &&
         (t.durationMinutes === undefined ||
           (Number.isInteger(t.durationMinutes) &&
-            t.durationMinutes >= 15 &&
+            t.durationMinutes >= (t.actual ? 1 : 15) &&
             t.durationMinutes <= 720)) &&
         (t.habitId === undefined ||
           (str(t.habitId, 100, 1) && w.habits.some((habit) => habit.id === t.habitId))) &&

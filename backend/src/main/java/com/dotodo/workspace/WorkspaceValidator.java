@@ -32,6 +32,7 @@ public class WorkspaceValidator {
             Set<String> habits = new HashSet<>();
             for (JsonNode h : w.get("habits")) habits.add(h.path("id").asText());
             for (JsonNode t : w.get("tasks")) {
+                if (t.has("actual")) require(t.get("actual").isBoolean());
                 require(text(t,"title",1,150) && !t.get("title").asText().isBlank() && text(t,"notes",0,20000));
                 require(text(t,"listId",1,100) && lists.contains(t.get("listId").asText()) && date(t,"date",true));
                 require(text(t,"time",0,5) && (t.get("time").asText().isEmpty() || t.get("time").asText().matches("([01]\\d|2[0-3]):[0-5]\\d")));
@@ -49,7 +50,7 @@ public class WorkspaceValidator {
                 if(t.has("recurrenceSource")) require(text(t,"recurrenceSource",1,100));
                 if(t.has("repeatDay")) require(integer(t,"repeatDay",1,31));
                 if (t.has("reminderMinutes")) require(integer(t, "reminderMinutes", 0, 10080));
-                if(t.has("durationMinutes")) require(integer(t,"durationMinutes",15,720));
+                if(t.has("durationMinutes")) require(integer(t,"durationMinutes",t.path("actual").asBoolean() ? 1 : 15,720));
             }
             for (JsonNode h : w.get("habits")) {
                 require(text(h,"name",1,100) && text(h,"icon",1,30) && color(h,"color") && integer(h,"goal",1,100));
