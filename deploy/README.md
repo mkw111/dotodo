@@ -12,7 +12,7 @@ Jenkins의 **Pipeline script from SCM**으로 공개 저장소의 신뢰할 수 
 
 배포 작업은 저장소를 폴링합니다. 프런트와 백엔드 작업은 같은 커밋 SHA를 각각 테스트하고 Docker Hub의 별도 저장소에 올립니다. 두 작업이 성공하면 배포 작업이 Compose를 실행하고 프런트와 API 응답을 확인합니다.
 
-Jenkins에 저장된 Username with password 유형의 `dockerCredential`로 Docker Hub에 로그인합니다. 서버의 `dockerhub-namespace` 파일에는 이미지 네임스페이스만 입력합니다. 설정 경로의 기본값은 `$HOME/.config/dotodo`입니다. 아래 DB 파일에는 줄바꿈 없이 값을 기록합니다.
+Jenkins에 저장된 Username with password 유형의 `dotodo-dockerhub`로 Docker Hub에 로그인합니다. 서버의 `dockerhub-namespace` 파일에는 이미지 네임스페이스만 입력합니다. 설정 경로의 기본값은 `$HOME/.config/dotodo`입니다. 아래 DB 파일에는 줄바꿈 없이 값을 기록합니다.
 
 | 파일 | 값 |
 | --- | --- |
