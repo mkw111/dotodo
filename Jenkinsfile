@@ -1,22 +1,39 @@
 pipeline {
-    agent { label 'dotodo-docker' }
-    options { disableConcurrentBuilds() }
+    agent none
+    options {
+        disableConcurrentBuilds()
+        skipDefaultCheckout()
+    }
     triggers { pollSCM('H/5 * * * *') }
     stages {
-        stage('Build and test') {
+        stage('Select revision') {
+            agent { label 'dotodo-docker' }
             steps {
-                sh '''
-                    set -eu
-                    config_dir="${DOTODO_CONFIG_DIR:-$HOME/.config/dotodo}"
-                    namespace="$(cat "$config_dir/dockerhub-namespace")"
-                    tag="$(git rev-parse HEAD)"
-                    docker build -f deploy/frontend.Dockerfile -t "$namespace/dotodo-frontend:$tag" .
-                    docker build -f deploy/backend.Dockerfile -t "$namespace/dotodo-backend:$tag" .
-                '''
+                checkout scm
+                script {
+                    env.RELEASE_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                }
+                stash name: 'compose', includes: 'deploy/compose.yml'
             }
         }
-        stage('Publish and deploy') {
+        stage('Publish images') {
+            parallel {
+                stage('Frontend') {
+                    steps {
+                        build job: 'dotodo-frontend', parameters: [string(name: 'RELEASE_SHA', value: env.RELEASE_SHA)]
+                    }
+                }
+                stage('Backend') {
+                    steps {
+                        build job: 'dotodo-backend', parameters: [string(name: 'RELEASE_SHA', value: env.RELEASE_SHA)]
+                    }
+                }
+            }
+        }
+        stage('Deploy') {
+            agent { label 'dotodo-docker' }
             steps {
+                unstash 'compose'
                 withCredentials([usernamePassword(credentialsId: 'dockerCredential',
                     usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
                     sh '''
@@ -24,13 +41,11 @@ pipeline {
                         set -eu
                         export DOTODO_CONFIG_DIR="${DOTODO_CONFIG_DIR:-$HOME/.config/dotodo}"
                         export DOCKERHUB_NAMESPACE="$(cat "$DOTODO_CONFIG_DIR/dockerhub-namespace")"
-                        export IMAGE_TAG="$(git rev-parse HEAD)"
+                        export IMAGE_TAG="$RELEASE_SHA"
                         DOCKER_CONFIG="$(mktemp -d)"
                         export DOCKER_CONFIG
                         trap 'rm -rf "$DOCKER_CONFIG"' EXIT
                         printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
-                        docker push "$DOCKERHUB_NAMESPACE/dotodo-frontend:$IMAGE_TAG"
-                        docker push "$DOCKERHUB_NAMESPACE/dotodo-backend:$IMAGE_TAG"
                         docker compose --project-name dotodo -f deploy/compose.yml pull
                         docker compose --project-name dotodo -f deploy/compose.yml up -d
                         url="http://127.0.0.1:${DOTODO_PORT:-8088}"
