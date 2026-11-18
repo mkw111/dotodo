@@ -1,6 +1,7 @@
 pipeline {
     agent { label 'dotodo-docker' }
     options { disableConcurrentBuilds() }
+    triggers { pollSCM('H/5 * * * *') }
     parameters {
         string(name: 'RELEASE_SHA', defaultValue: '', description: 'Exact Git commit to build. Blank uses the configured branch.')
     }
@@ -8,6 +9,11 @@ pipeline {
         stage('Build and test') {
             steps {
                 sh 'sh deploy/build-image.sh frontend'
+            }
+        }
+        stage('Deploy frontend') {
+            steps {
+                sh 'sh deploy/deploy-local.sh frontend'
             }
         }
     }

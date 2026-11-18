@@ -1,13 +1,13 @@
 services:
   frontend:
-    image: ${DOCKERHUB_NAMESPACE:?Docker Hub namespace required}/dotodo-frontend:${IMAGE_TAG:?Image tag required}
+    image: ${DOCKERHUB_NAMESPACE:?Docker Hub namespace required}/dotodo-frontend:${FRONTEND_TAG:?Frontend tag required}
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "127.0.0.1:${DOTODO_PORT:-8088}:80"
   backend:
-    image: ${DOCKERHUB_NAMESPACE:?Docker Hub namespace required}/dotodo-backend:${IMAGE_TAG:?Image tag required}
+    image: ${DOCKERHUB_NAMESPACE:?Docker Hub namespace required}/dotodo-backend:${BACKEND_TAG:?Backend tag required}
     restart: unless-stopped
     environment:
       SERVER_ADDRESS: 0.0.0.0
