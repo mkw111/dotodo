@@ -20,6 +20,7 @@ import useWorkspace from "./useWorkspace";
 import { dataMode } from "./api";
 import {
   addDays,
+  carriesToDay,
   matches,
   moveTaskDate,
   scheduledOn,
@@ -34,6 +35,7 @@ import {
   localDate,
   palette,
   priorityNames,
+  repeatNames,
   type Priority,
   type Task,
   type TaskList,
@@ -78,6 +80,7 @@ export default function App() {
 
   const [sort, setSort] = useState("order");
   const [group, setGroup] = useState("date");
+  const [homeCategory, setHomeCategory] = useState("all");
   const [layout, setLayout] = useState<"list" | "board">("list");
   const [selectionMode, setSelectionMode] = useState(false);
   const [checked, setChecked] = useState<string[]>([]);
@@ -322,6 +325,7 @@ export default function App() {
   const tasks = state.tasks.filter((task) => !task.actual || (view === "trash" && task.deletedAt));
   const visibleTasks = tasks.filter((t) => !t.deletedAt);
   const active = visibleTasks.filter((t) => !t.completed);
+  const dayTasks = visibleTasks.filter((task) => homeCategory === "all" || task.listId === homeCategory);
   const selectedTask = tasks.find((t) => t.id === selected && !t.deletedAt);
   const tags = [...new Set(visibleTasks.flatMap((t) => t.tags))].sort();
   const special = [
@@ -345,19 +349,19 @@ export default function App() {
   const completedOn = (task: Task, day: string) =>
     task.completed && Boolean(task.completedAt) &&
     localDate(new Date(task.completedAt!)) === day;
-  const filtered = tasks.filter((t) =>
+  const filtered = tasks.filter((t) => (!home || homeCategory === "all" || t.listId === homeCategory) && (
     query
       ? !t.deletedAt &&
         `${t.title} ${t.notes} ${t.tags.join(" ")}`
           .toLowerCase()
           .includes(query.toLowerCase())
       : view === "today" && t.completed
-      ? !t.deletedAt && completedOn(t, displayedDay)
-      : view === "today" && displayedDay !== today
-      ? !t.deletedAt && scheduledOn(t, displayedDay)
+      ? !t.deletedAt && (completedOn(t, displayedDay) || scheduledOn(t, displayedDay))
+      : view === "today"
+      ? !t.deletedAt && (scheduledOn(t, displayedDay) || carriesToDay(t, state.lists, displayedDay))
       : matches(t, view, today) &&
         (view !== "completed" || !completionDay || completedOn(t, completionDay))
-  );
+  ));
   const sorted = [...filtered].sort((a, b) =>
     sort === "priority"
       ? (a.priority || 5) - (b.priority || 5) || a.order - b.order
@@ -370,8 +374,8 @@ export default function App() {
   );
   const pending = sorted.filter((t) => !t.completed);
   const completed = sorted.filter((t) => t.completed);
-  const todayDone = visibleTasks.filter((t) => completedOn(t, displayedDay)).length;
-  const todayTotal = todayDone + active.filter((t) => scheduledOn(t, displayedDay)).length;
+  const todayDone = dayTasks.filter((t) => completedOn(t, displayedDay)).length;
+  const todayTotal = todayDone + dayTasks.filter((t) => !t.completed && scheduledOn(t, displayedDay)).length;
   const progress = todayTotal
     ? Math.round((todayDone / todayTotal) * 100)
     : 0;
@@ -621,7 +625,10 @@ export default function App() {
                 {task.checklist.length}
               </span>
             )}
-            {task.repeat !== "none" && <Icon name="repeat" size={12} />}
+            {task.repeat !== "none" && <span className="task-repeat-label"><Icon name="repeat" size={12} />{repeatNames[task.repeat]}</span>}
+            {task.habitId && <span className="task-habit-label">습관 연동</span>}
+            {home && carriesToDay(task, state!.lists, displayedDay) &&
+              <span className="task-carry-label">{dateLabel(task.date, today)}부터</span>}
           </span>
         </button>
         {!compact && (
@@ -716,7 +723,7 @@ export default function App() {
           : group === "none"
           ? "할 일"
           : (task.endDate ?? task.date) && (task.endDate ?? task.date) < displayedDay
-          ? "이월된 할 일"
+          ? "이전 날짜에서 이어서"
           : task.date
           ? dateLabel(scheduledOn(task, displayedDay) ? displayedDay : task.date, today)
           : "날짜 없음";
@@ -724,7 +731,7 @@ export default function App() {
     }
     return [...groups].map(([label, items]) => (
       <section className="task-group" key={label}>
-        <h3 className={label === "이월된 할 일" ? "overdue" : ""}>
+        <h3 className={label === "이전 날짜에서 이어서" ? "overdue" : ""}>
           <Icon name="chevron" size={13} />
           {label}
           <span>{items.length}</span>
@@ -839,7 +846,9 @@ export default function App() {
                 </i>
                 <span>{v.name}</span>
                 <small>
-                  {active.filter((t) => matches(t, v.id, today)).length || ""}
+                  {active.filter((t) => v.id === "today"
+                    ? scheduledOn(t, today) || carriesToDay(t, state.lists, today)
+                    : matches(t, v.id, today)).length || ""}
                 </small>
               </button>
             ))}
@@ -1033,11 +1042,11 @@ export default function App() {
               )}
               <div className="page-heading">
                 <div>
-                  <div className="page-eyebrow">
+                  {!home && <div className="page-eyebrow">
                     {view === "today"
                       ? "YOUR DAY, YOUR PACE"
                       : "A CLEAR MIND. A BETTER DAY."}
-                  </div>
+                  </div>}
                   <h1>
                     {title}
                     {!special && (
@@ -1106,10 +1115,25 @@ export default function App() {
               {!special || query ? (
                 <>
                   {view === "today" && !query && (
+                    <nav className="home-category-strip" aria-label="카테고리별 할 일">
+                      {[{ id: "all", name: "전체" }, { id: "inbox", name: "수집함" }, ...state.lists].map((list) =>
+                        <button key={list.id} type="button" aria-pressed={homeCategory === list.id}
+                          onClick={() => setHomeCategory(list.id)}>
+                          {"color" in list && <i style={{ background: list.color }} />}
+                          {list.name}
+                        </button>)}
+                      {state.lists.some((list) => list.id === homeCategory) &&
+                        <button type="button" className="category-settings-shortcut"
+                          onClick={() => setListEditor(state.lists.find((list) => list.id === homeCategory)!)}>
+                          이월 설정
+                        </button>}
+                    </nav>
+                  )}
+                  {view === "today" && !query && (
                     <section className="day-summary" aria-label="하루 진행 상황">
-                      <div><strong>{todayDone}</strong><span>완료</span></div>
-                      <div><strong>{active.filter((task) => scheduledOn(task, displayedDay)).length}</strong><span>예정</span></div>
-                      <div><strong>{active.filter((task) => task.date && (task.endDate ?? task.date) < displayedDay).length}</strong><span>이월</span></div>
+                      <div><strong>{dayTasks.filter((task) => completedOn(task, displayedDay)).length}</strong><span>완료</span></div>
+                      <div><strong>{dayTasks.filter((task) => !task.completed && scheduledOn(task, displayedDay)).length}</strong><span>예정</span></div>
+                      <div><strong>{dayTasks.filter((task) => !task.completed && carriesToDay(task, state.lists, displayedDay)).length}</strong><span>이어서 할 일</span></div>
                       <progress max={100} value={progress} aria-label="예정된 할 일 완료율" />
                     </section>
                   )}
@@ -1755,6 +1779,7 @@ function ListEditor({
 }) {
   const [name, setName] = useState(list?.name || "");
   const [color, setColor] = useState(list?.color || palette[0]);
+  const [autoCarry, setAutoCarry] = useState(list?.autoCarry !== false);
   return (
     <Modal title={list ? "리스트 수정" : "새로운 리스트"} onClose={onClose}>
       <form
@@ -1765,6 +1790,7 @@ function ListEditor({
             name: name.trim(),
             color,
             icon: list?.icon || "list",
+            autoCarry,
           });
         }}
       >
@@ -1794,6 +1820,15 @@ function ListEditor({
             ))}
           </div>
         </div>
+        <label className="category-carry-setting">
+          <div>
+            <strong>미완료 할 일 자동 이월</strong>
+            <span>{autoCarry ? "다음 날에도 이어서 표시해요. 원래 날짜의 기록은 보존돼요." : "지정한 날짜에만 표시해요."}</span>
+            <small>매일 반복은 이 설정과 관계없이 날짜마다 새로 생성돼요.</small>
+          </div>
+          <input type="checkbox" checked={autoCarry}
+            onChange={(event) => setAutoCarry(event.target.checked)} />
+        </label>
         <div className="dialog-actions">
           {list && (
             <button

@@ -29,6 +29,7 @@ export type TaskList = {
   name: string;
   color: string;
   icon: string;
+  autoCarry?: boolean;
 };
 export type Habit = {
   id: string;

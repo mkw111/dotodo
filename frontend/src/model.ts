@@ -77,10 +77,30 @@ export function newTask(title: string, patch: Partial<Task> = {}): Task {
 }
 export function saveTaskWithHabit(state: Workspace, task: Task, linkHabit?: boolean): Workspace {
   const existing = state.tasks.find((item) => item.id === task.id);
-  const tasks = existing
+  let tasks = existing
     ? state.tasks.map((item) => item.id === task.id ? task : item)
     : [...state.tasks, task];
-  const next = { ...state, tasks };
+  if (existing && task.title !== existing.title) {
+    const descendants = new Set([task.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const item of tasks) {
+        if (item.recurrenceSource && descendants.has(item.recurrenceSource) && !descendants.has(item.id)) {
+          descendants.add(item.id);
+          changed = true;
+        }
+      }
+    }
+    tasks = tasks.map((item) => item.id !== task.id && descendants.has(item.id) &&
+      !item.completed && item.date >= task.date ? { ...item, title: task.title } : item);
+  }
+  const next = {
+    ...state, tasks,
+    habits: state.habits.map((habit) =>
+      habit.id === task.habitId && existing?.title !== task.title
+        ? { ...habit, name: task.title.trim().slice(0, 100) } : habit),
+  };
   if (linkHabit === undefined) return next;
 
   const habitId = task.habitId;
@@ -134,6 +154,32 @@ export function saveTaskWithHabit(state: Workspace, task: Task, linkHabit?: bool
       checks,
     }],
   };
+}
+
+// Keep each day's occurrence so a missed daily task remains in that day's history.
+export function materializeDailyTasks(state: Workspace, today = localDate()): Workspace {
+  const tasks = [...state.tasks];
+  const children = new Set(tasks.map((task) => task.recurrenceSource).filter(Boolean));
+  const until = addDays(today, 1);
+  for (let i = 0; i < tasks.length && tasks.length < 10000; i++) {
+    const task = tasks[i];
+    if (task.repeat !== "daily" || task.actual || task.deletedAt || !task.date ||
+        task.date >= until || children.has(task.id)) continue;
+    const date = addDays(task.date, 1);
+    tasks.push(newTask(task.title, {
+      ...task, id: uid(), ...moveTaskDate(task, date),
+      completed: false, completedAt: null, recurrenceSource: task.id,
+      checklist: task.checklist.map((item) => ({ ...item, id: uid(), done: false })),
+      createdAt: new Date().toISOString(), order: Date.now(),
+    }));
+    children.add(task.id);
+  }
+  return tasks.length === state.tasks.length ? state : { ...state, tasks };
+}
+
+export function carriesToDay(task: Task, lists: Workspace["lists"], day: string): boolean {
+  return Boolean(task.date) && (task.endDate || task.date) < day &&
+    task.repeat !== "daily" && lists.find((list) => list.id === task.listId)?.autoCarry !== false;
 }
 
 export function toggleTask(state: Workspace, id: string, completedDay?: string): Workspace {
@@ -228,7 +274,8 @@ export function matches(task: Task, view: View, today = localDate()): boolean {
   if (view === "trash") return Boolean(task.deletedAt);
   if (task.deletedAt) return false;
   if (view === "completed") return task.completed;
-  if (view === "today") return Boolean(task.date) && task.date <= today;
+  if (view === "today") return scheduledOn(task, today) ||
+    (Boolean(task.date) && task.date < today && task.repeat !== "daily");
   if (view === "tomorrow") return scheduledOn(task, addDays(today, 1));
   if (view === "week")
     return (
@@ -479,6 +526,7 @@ export function validateWorkspace(value: unknown): Workspace {
   if (
     !w.lists.every(
       (l) =>
+        (l.autoCarry === undefined || typeof l.autoCarry === "boolean") &&
         str(l.name, 50, 1) &&
         /^#[0-9a-f]{6}$/i.test(l.color) &&
         str(l.icon, 30, 1) &&

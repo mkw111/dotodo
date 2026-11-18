@@ -27,7 +27,11 @@ public class WorkspaceValidator {
                 for(JsonNode r:w.get("rewards")) require(text(r,"id",1,180) && rewardIds.add(r.get("id").asText()) && text(r,"type",1,10) && Set.of("task","habit","focus","quest").contains(r.get("type").asText()) && text(r,"title",0,150) && integer(r,"xp",1,60) && bool(r,"active") && stamp(r,"earnedAt",false));
             }
             Set<String> lists = new HashSet<>(); lists.add("inbox");
-            for (JsonNode l : w.get("lists")) { require(text(l,"id",1,100) && lists.add(l.get("id").asText())); require(text(l,"name",1,50) && color(l,"color") && text(l,"icon",1,30)); }
+            for (JsonNode l : w.get("lists")) {
+                require(text(l,"id",1,100) && lists.add(l.get("id").asText()));
+                require(text(l,"name",1,50) && color(l,"color") && text(l,"icon",1,30));
+                if (l.has("autoCarry")) require(bool(l, "autoCarry"));
+            }
             unique(w.get("tasks")); unique(w.get("habits")); unique(w.get("sessions"));
             Set<String> habits = new HashSet<>();
             for (JsonNode h : w.get("habits")) habits.add(h.path("id").asText());

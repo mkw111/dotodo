@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConflictError, dataMode, workspaceApi } from "./api";
-import { remainingSeconds, uid } from "./model";
+import { materializeDailyTasks, remainingSeconds, uid } from "./model";
+import { localDate } from "./types";
 import type { Workspace } from "./types";
 import { rankProfile, syncRewards } from "./rank";
 
@@ -15,27 +16,34 @@ export default function useWorkspace() {
   const [busy, setBusy] = useState(false);
   const latest = useRef<Workspace | null>(null);
   const saving = useRef(false);
+  const loading = useRef(false);
   const load = useCallback(async () => {
+    if (loading.current || saving.current) return;
+    loading.current = true;
     try {
       const next = await workspaceApi.load();
-      latest.current = next;
-      setState(next);
+      const prepared = materializeDailyTasks(next);
+      if (prepared !== next) await workspaceApi.save(prepared);
+      latest.current = prepared;
+      setState(prepared);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "데이터를 불러올 수 없어요.");
+    } finally {
+      loading.current = false;
     }
   }, []);
   useEffect(() => {
     void load();
   }, [load]);
   const commit: Commit = useCallback(async (change, message) => {
-    if (!latest.current || saving.current) return false;
+    if (!latest.current || saving.current || loading.current) return false;
     saving.current = true;
     setBusy(true);
     setError("");
     try {
       const before = rankProfile(latest.current);
-      const next = syncRewards(change(latest.current));
+      const next = syncRewards(materializeDailyTasks(change(latest.current)));
       await workspaceApi.save(next);
       latest.current = next;
       setState(next);
@@ -63,6 +71,22 @@ export default function useWorkspace() {
       setBusy(false);
     }
   }, []);
+  useEffect(() => {
+    let day = localDate();
+    const refreshDay = () => {
+      if (localDate() === day || !latest.current || saving.current) return;
+      const currentDay = localDate();
+      void commit(materializeDailyTasks).then((saved) => { if (saved) day = currentDay; });
+    };
+    const timer = setInterval(refreshDay, 30000);
+    window.addEventListener("focus", refreshDay);
+    document.addEventListener("visibilitychange", refreshDay);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refreshDay);
+      document.removeEventListener("visibilitychange", refreshDay);
+    };
+  }, [commit]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 4000);

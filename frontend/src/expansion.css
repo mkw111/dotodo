@@ -1546,3 +1546,51 @@
 .review-stats table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .review-stats :is(th, td) { text-align: right; padding: 8px 4px; border-bottom: 1px solid var(--border); }
 .review-stats th:first-child { text-align: left; }
+
+.home-category-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 16px;
+  scrollbar-width: thin;
+}
+.home-category-strip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+.home-category-strip button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  font-weight: 600;
+}
+.home-category-strip i { width: 8px; height: 8px; border-radius: 50%; }
+.category-carry-setting {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  margin-block: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--soft);
+}
+.category-carry-setting div { display: grid; gap: 8px; }
+.category-carry-setting strong { font-size: 14px; }
+.category-carry-setting span, .category-carry-setting small { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.category-carry-setting input { width: 22px; height: 22px; flex-shrink: 0; accent-color: var(--accent); }
+.task-meta .task-repeat-label { display: inline-flex; align-items: center; gap: 4px; }
+.task-meta .task-habit-label { color: var(--accent); }
+.task-meta .task-carry-label { color: var(--muted); }
+.home-swipe .task-row { min-height: 88px; padding-block: 16px; }
+.home-swipe .task-group > h3 { padding-block: 14px; font-size: 13px; }
