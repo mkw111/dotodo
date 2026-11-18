@@ -1169,7 +1169,12 @@
 }
 
 .schedule-all-day-event > button:first-child {
-  touch-action: none;
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+}
+.time-schedule [data-touch-placeholder] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .home-swipe {

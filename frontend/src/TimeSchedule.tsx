@@ -12,6 +12,13 @@ import { localDate, type Task, type TaskList } from "./types";
 import Icon from "./Icon";
 
 const HOUR_HEIGHT = 80;
+const SCROLL_EDGE = 48;
+const scrollSpeed = (y: number, top: number, bottom: number, edge: number) => {
+  if (y < top || y > bottom || edge <= 0) return 0;
+  if (y < top + edge) return -12 * (1 - (y - top) / edge);
+  if (y > bottom - edge) return 12 * (1 - (bottom - y) / edge);
+  return 0;
+};
 type Preview = {
   id: string;
   date: string;
@@ -42,6 +49,7 @@ export default function TimeSchedule({
   onAdd: (date: string, time?: string, options?: Pick<Task, "endDate" | "durationMinutes">) => void;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
+  const allDayList = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<{ date: string; start: number; end: number } | null>(null);
   useCalendarHold(viewport, (target, _x, y, starting) => {
     if (starting && !target?.closest(".schedule-hour-slot")) return null;
@@ -57,6 +65,7 @@ export default function TimeSchedule({
   const cleanup = useRef<(() => void) | null>(null);
   const skipClick = useRef(false);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [touchSource, setTouchSource] = useState<{ task: Task; day: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [copyId, setCopyId] = useState<string | null>(null);
   const copiedEvent = useRef<HTMLButtonElement>(null);
@@ -83,6 +92,18 @@ export default function TimeSchedule({
       ...(preview.time ? { endDate: undefined } : {}),
     } : t
   );
+  function tasksInColumn(matches: (task: Task) => boolean, day: string) {
+    // Touch events keep their original target when the preview crosses columns or rows.
+    return visible.flatMap((task) => {
+      if (matches(task)) return [task];
+      if (touchSource?.day === day && task.id === touchSource.task.id && matches(touchSource.task))
+        return [touchSource.task];
+      return [];
+    });
+  }
+  function isTouchPlaceholder(task: Task) {
+    return touchSource?.task === task && Boolean(preview && !visible.includes(task));
+  }
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   function scheduleAt(event: React.DragEvent, date: string) {
@@ -103,7 +124,7 @@ export default function TimeSchedule({
       durationMinutes: task.durationMinutes || 30,
     });
   }
-  function holdToMove(event: React.TouchEvent<HTMLButtonElement>, task: Task) {
+  function holdToMove(event: React.TouchEvent<HTMLButtonElement>, task: Task, day = task.date) {
     if (saving || event.touches.length !== 1) return;
     cleanup.current?.();
     const target = event.currentTarget;
@@ -116,7 +137,7 @@ export default function TimeSchedule({
       begin({
         currentTarget: target, clientX: x, clientY: y, button: 0,
         preventDefault() {}, stopPropagation() {},
-      }, task, false, task.date, true);
+      }, task, false, day, true);
     }, 420);
     const move = (next: TouchEvent) => {
       const point = next.touches[0];
@@ -137,6 +158,7 @@ export default function TimeSchedule({
   }
   function begin(event: {
     currentTarget: Element; clientX: number; clientY: number; button: number;
+    pointerId?: number; pointerType?: string;
     preventDefault: () => void; stopPropagation: () => void;
   }, task: Task, resize = false, grabbedDay = task.date, touchDrag = false) {
     if (saving || event.button !== 0) return;
@@ -144,6 +166,8 @@ export default function TimeSchedule({
     event.stopPropagation();
     cleanup.current?.();
     const column = event.currentTarget.closest<HTMLElement>("[data-schedule-date]");
+    const pointerCapture = event.pointerType === "touch" ? viewport.current : null;
+    if (pointerCapture && event.pointerId !== undefined) pointerCapture.setPointerCapture(event.pointerId);
     const rect = column?.getBoundingClientRect();
     const startY = event.clientY;
     const startX = event.clientX;
@@ -160,25 +184,24 @@ export default function TimeSchedule({
     let moved = false;
     let transfer = false;
     let validDrop = true;
-    if (touchDrag) setPreview({ ...next });
-    const move = (e: { clientX: number; clientY: number; preventDefault: () => void }) => {
-      if (
-        Math.abs(e.clientY - startY) + Math.abs(e.clientX - startX) < 4 &&
-        !moved
-      )
-        return;
-      e.preventDefault();
-      moved = true;
-      if (resize)
+    let frame = 0;
+    let point = { x: startX, y: startY };
+    if (touchDrag) {
+      setTouchSource({ task, day: grabbedDay });
+      setPreview({ ...next });
+    }
+    const updateDrop = () => {
+      if (resize) {
+        const scrolled = rect && column ? rect.top - column.getBoundingClientRect().top : 0;
         next = {
           ...next,
           durationMinutes: snapDuration(
-            duration + ((e.clientY - startY) / HOUR_HEIGHT) * 60,
+            duration + ((point.y - startY + scrolled) / HOUR_HEIGHT) * 60,
             start
           ),
         };
-      else {
-        const target = document.elementFromPoint(e.clientX, e.clientY)
+      } else {
+        const target = document.elementFromPoint(point.x, point.y)
           ?.closest<HTMLElement>("[data-schedule-date], [data-schedule-all-day]");
         transfer = Boolean(onTransfer && target?.closest("[data-actual-pane]") && target.dataset.scheduleDate);
         validDrop = Boolean(target && (transfer || viewport.current?.contains(target)));
@@ -192,20 +215,45 @@ export default function TimeSchedule({
           ...next,
           date: allDay ? addDays(allDay, -dayOffset) : target.dataset.scheduleDate!,
           time: allDay ? "" : timeOf(
-            snapStart(((e.clientY - targetRect.top) / HOUR_HEIGHT) * 60 - grab, duration)
+            snapStart(((point.y - targetRect.top) / HOUR_HEIGHT) * 60 - grab, duration)
           ),
         };
       }
       setPreview(transfer ? null : { ...next });
+    };
+    const autoScroll = () => {
       const container = viewport.current;
+      frame = requestAnimationFrame(autoScroll);
       if (container) {
-        const box = container.getBoundingClientRect();
-        if (e.clientY > box.bottom - 45) container.scrollTop += 12;
-        else if (e.clientY < box.top + 110) container.scrollTop -= 12;
+        const hit = document.elementFromPoint(point.x, point.y);
+        const target = hit?.closest<HTMLElement>(".schedule-viewport");
+        const scroller = transfer ? target : container;
+        if (!scroller || target !== scroller) return;
+        const box = scroller.getBoundingClientRect();
+        const list = scroller === container ? allDayList.current : null;
+        const inAllDay = list && hit && list.contains(hit);
+        const scrollArea = inAllDay ? list : scroller;
+        const area = scrollArea.getBoundingClientRect();
+        const stickyBottom = scroller.querySelector(".schedule-all-day")?.getBoundingClientRect().bottom ?? 0;
+        const top = Math.max(0, area.top, inAllDay ? box.top : stickyBottom);
+        const nav = document.querySelector(".mobile-bottom-nav")?.getBoundingClientRect();
+        const bottom = Math.min(area.bottom, window.innerHeight, nav?.height ? nav.top : Infinity);
+        const previous = scrollArea.scrollTop;
+        scrollArea.scrollTop += scrollSpeed(point.y, top, bottom, Math.min(SCROLL_EDGE, (bottom - top) / 2));
+        if (scrollArea.scrollTop !== previous) updateDrop();
       }
+    };
+    const move = (e: { clientX: number; clientY: number; preventDefault: () => void }) => {
+      if (!moved && Math.abs(e.clientY - startY) + Math.abs(e.clientX - startX) < 4) return;
+      e.preventDefault();
+      point = { x: e.clientX, y: e.clientY };
+      if (!moved) frame = requestAnimationFrame(autoScroll);
+      moved = true;
+      updateDrop();
     };
     const stop = async () => {
       cleanup.current?.();
+      setTouchSource(null);
       skipClick.current = true;
       setTimeout(() => {
         skipClick.current = false;
@@ -238,6 +286,7 @@ export default function TimeSchedule({
     };
     const cancel = () => {
       cleanup.current?.();
+      setTouchSource(null);
       setPreview(null);
       skipClick.current = true;
       setTimeout(() => { skipClick.current = false; }, 500);
@@ -248,20 +297,22 @@ export default function TimeSchedule({
       move({ clientX: point.clientX, clientY: point.clientY,
         preventDefault: () => { if (e.cancelable) e.preventDefault(); } });
     };
-    const touchTarget = event.currentTarget;
     cleanup.current = () => {
+      cancelAnimationFrame(frame);
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", stop);
       document.removeEventListener("pointercancel", cancel);
-      touchTarget.removeEventListener("touchmove", touchMove as EventListener);
-      touchTarget.removeEventListener("touchend", stop);
-      touchTarget.removeEventListener("touchcancel", cancel);
+      document.removeEventListener("touchmove", touchMove);
+      document.removeEventListener("touchend", stop);
+      document.removeEventListener("touchcancel", cancel);
+      if (event.pointerId !== undefined && pointerCapture?.hasPointerCapture(event.pointerId))
+        pointerCapture.releasePointerCapture(event.pointerId);
       cleanup.current = null;
     };
     if (touchDrag) {
-      touchTarget.addEventListener("touchmove", touchMove as EventListener, { passive: false });
-      touchTarget.addEventListener("touchend", stop);
-      touchTarget.addEventListener("touchcancel", cancel);
+      document.addEventListener("touchmove", touchMove, { passive: false });
+      document.addEventListener("touchend", stop);
+      document.addEventListener("touchcancel", cancel);
       return;
     }
     document.addEventListener("pointermove", move, { passive: false });
@@ -310,6 +361,7 @@ export default function TimeSchedule({
           </div>
           <div
             className="schedule-all-day"
+            ref={allDayList}
             style={{
               gridTemplateColumns: `var(--schedule-time-width, 52px) repeat(${days.length},minmax(0,1fr))`,
             }}
@@ -327,15 +379,19 @@ export default function TimeSchedule({
                     void onSchedule(id, { date: day, time: "" });
                 }}
               >
-                {visible
-                  .filter((t) => !t.time && scheduledOn(t, day))
+                {tasksInColumn((t) => !t.time && scheduledOn(t, day), day)
                   .map((t) => (
                     <div key={t.id} className="schedule-all-day-event"
+                      data-touch-placeholder={isTouchPlaceholder(t) || undefined}
                       data-copy={t.id === copyId || undefined}>
                       <button
                         ref={t.id === copyId ? copiedEvent : undefined}
                         disabled={saving}
-                        onPointerDown={(e) => begin(e, t, false, day)}
+                        onPointerDown={(e) => {
+                          if (e.pointerType !== "touch") begin(e, t, false, day);
+                        }}
+                        onTouchStart={(e) => holdToMove(e, t, day)}
+                        onContextMenu={(e) => e.preventDefault()}
                         onClick={() => {
                           if (!skipClick.current) onSelect(t.id);
                         }}
@@ -410,10 +466,11 @@ export default function TimeSchedule({
                   </div>
                 )}
                 {layoutSchedule(
-                  visible.filter((t) => t.date === day && t.time)
+                  tasksInColumn((t) => t.date === day && Boolean(t.time), day)
                 ).map(({ task, start, end, column, columns }) => (
                   <article
                     key={task.id}
+                    data-touch-placeholder={isTouchPlaceholder(task) || undefined}
                     data-copy={task.id === copyId || undefined}
                     className={`schedule-event ${
                       preview?.id === task.id ? "drag-preview" : ""
