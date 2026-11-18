@@ -5,12 +5,9 @@ pipeline {
         string(name: 'RELEASE_SHA', defaultValue: '', description: 'Exact Git commit to build. Blank uses the configured branch.')
     }
     stages {
-        stage('Build, test and publish') {
+        stage('Build and test') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerCredential',
-                    usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
-                    sh 'sh deploy/publish-image.sh backend'
-                }
+                sh 'sh deploy/build-image.sh backend'
             }
         }
     }

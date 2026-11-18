@@ -1,5 +1,4 @@
 #!/bin/sh
-set +x
 set -eu
 
 case "${1:-}" in
@@ -17,8 +16,3 @@ config_dir="${DOTODO_CONFIG_DIR:-$HOME/.config/dotodo}"
 namespace="$(cat "$config_dir/dockerhub-namespace")"
 image="$namespace/dotodo-$component:$tag"
 docker build -f "deploy/$component.Dockerfile" -t "$image" .
-DOCKER_CONFIG="$(mktemp -d)"
-export DOCKER_CONFIG
-trap 'rm -rf "$DOCKER_CONFIG"' EXIT
-printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
-docker push "$image"
