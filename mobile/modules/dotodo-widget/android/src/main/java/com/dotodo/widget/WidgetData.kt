@@ -52,6 +52,7 @@ object WidgetData {
       connection.connectTimeout = 4000
       connection.readTimeout = 5000
       connection.instanceFollowRedirects = false
+      connection.setRequestProperty("X-Dotodo-Widget", "1")
       val credentials = session.getString("username") + ":" + session.getString("password")
       connection.setRequestProperty("Authorization", "Basic " + Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
       if (taskId != null) {
