@@ -90,11 +90,12 @@ class WorkspaceApiTest {
         assertFalse(prepared.path("data").path("tasks").get(1).path("checklist").get(0).path("done").asBoolean());
         String id = prepared.path("data").path("tasks").get(1).path("id").asText();
         String endpoint = "/api/workspace/tasks/" + id + "/complete?day=2026-11-19";
-        mvc.perform(post(endpoint)).andExpect(status().isOk()).andExpect(jsonPath("$.data.tasks[1].completed").value(true));
-        mvc.perform(post(endpoint)).andExpect(status().isOk()).andExpect(jsonPath("$.data.habits[0].checks['2026-11-19']").value(1));
+        mvc.perform(post(endpoint)).andExpect(status().isUnsupportedMediaType());
+        mvc.perform(post(endpoint).contentType("application/json")).andExpect(status().isOk()).andExpect(jsonPath("$.data.tasks[1].completed").value(true));
+        mvc.perform(post(endpoint).contentType("application/json")).andExpect(status().isOk()).andExpect(jsonPath("$.data.habits[0].checks['2026-11-19']").value(1));
         assertEquals(3, load().path("data").path("tasks").size());
         mvc.perform(put("/api/workspace").contentType("application/json").content(prepared.toString())).andExpect(status().isConflict());
-        mvc.perform(post("/api/workspace/tasks/missing/complete?day=2026-11-19")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/workspace/tasks/missing/complete?day=2026-11-19").contentType("application/json")).andExpect(status().isNotFound());
         mvc.perform(get("/api/workspace/widget?day=bad-date")).andExpect(status().isBadRequest());
     }
 

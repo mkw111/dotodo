@@ -54,7 +54,10 @@ object WidgetData {
       connection.instanceFollowRedirects = false
       val credentials = session.getString("username") + ":" + session.getString("password")
       connection.setRequestProperty("Authorization", "Basic " + Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
-      if (taskId != null) connection.requestMethod = "POST"
+      if (taskId != null) {
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+      }
       check(connection.responseCode != 401) { "로그인이 만료됐어요. 앱을 열어 주세요" }
       if (taskId != null && connection.responseCode == 404) return request(context)
       if (connection.responseCode !in 200..299) throw java.io.IOException("동기화 실패")

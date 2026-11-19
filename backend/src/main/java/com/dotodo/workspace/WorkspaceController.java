@@ -12,6 +12,7 @@ public class WorkspaceController {
     public WorkspaceController(WorkspaceService service) { this.service=service; }
     @GetMapping public WorkspaceService.Snapshot get() { return service.get(); }
     @GetMapping("/widget") public WorkspaceService.Snapshot widget(@RequestParam String day) { return service.widget(day); }
-    @PostMapping("/tasks/{id}/complete") public WorkspaceService.Snapshot complete(@PathVariable String id, @RequestParam String day) { return service.completeFromWidget(id, day); }
+    @PostMapping(value = "/tasks/{id}/complete", consumes = "application/json")
+    public WorkspaceService.Snapshot complete(@PathVariable String id, @RequestParam String day) { return service.completeFromWidget(id, day); }
     @PutMapping public WorkspaceService.Snapshot save(@Valid @RequestBody SaveRequest request) { return service.save(request.revision(),request.data()); }
 }
