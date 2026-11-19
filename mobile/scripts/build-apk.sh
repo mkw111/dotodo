@@ -3,10 +3,25 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$project_root"
-VITE_DATA_MODE=demo npm run build
-node mobile/scripts/embed-web.mjs
-
-export DOTODO_EMBED_WEB=1
+case "${1:-demo}" in
+  deployed)
+    export DOTODO_EMBED_WEB=0
+    export EXPO_PUBLIC_DOTODO_DEPLOYED=1
+    export EXPO_PUBLIC_WEB_URL=https://www.save-time.kro.kr/dotodo/
+    export DOTODO_HTTPS_ONLY=1
+    ;;
+  demo)
+    VITE_DATA_MODE=demo npm run build
+    node mobile/scripts/embed-web.mjs
+    export DOTODO_EMBED_WEB=1
+    export EXPO_PUBLIC_DOTODO_DEPLOYED=0
+    export DOTODO_HTTPS_ONLY=0
+    ;;
+  *)
+    echo "Usage: $0 [demo|deployed]" >&2
+    exit 1
+    ;;
+esac
 cd mobile
 ./node_modules/.bin/expo prebuild --platform android --no-install
 cd android

@@ -74,6 +74,22 @@ export async function syncReminders(reminders: Reminder[], allowed: boolean) {
   }
 }
 
+export async function testReminder() {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "dotodo · 테스트 알림",
+      body: "앱 알림이 정상적으로 동작하고 있어요.",
+      sound: "default",
+      data: { source: "dotodo-test" },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 5,
+      channelId: channel,
+    },
+  });
+}
+
 export function subscribeToReminderOpens(open: (id: string) => void) {
   let handled: string | undefined;
   function handle(response: Notifications.NotificationResponse | null) {

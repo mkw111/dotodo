@@ -27,6 +27,8 @@ export default function SettingsView({
   );
   const app = Boolean(window.ReactNativeWebView);
   const [appPermission, setAppPermission] = useState("loading");
+  const [session, setSession] = useState<{ username: string; remembered: boolean } | null>(null);
+  const [testingReminder, setTestingReminder] = useState(false);
   useEffect(() => {
     if (!window.ReactNativeWebView) return;
     const update = (event: Event) => setAppPermission((event as CustomEvent<string>).detail);
@@ -34,6 +36,35 @@ export default function SettingsView({
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: "DOTODO_REMINDER_STATUS" }));
     return () => window.removeEventListener("dotodo:reminder-status", update);
   }, []);
+  useEffect(() => {
+    if (!window.ReactNativeWebView) return;
+    const onTest = (event: Event) => {
+      setTestingReminder(false);
+      notify(String((event as CustomEvent).detail));
+    };
+    const onSession = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && typeof detail.username === "string") setSession(detail);
+    };
+    const onSessionError = (event: Event) => notify(String((event as CustomEvent).detail));
+    window.addEventListener("dotodo:reminder-test", onTest);
+    window.addEventListener("dotodo:session-status", onSession);
+    window.addEventListener("dotodo:session-error", onSessionError);
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: "DOTODO_SESSION_STATUS" }));
+    return () => {
+      window.removeEventListener("dotodo:reminder-test", onTest);
+      window.removeEventListener("dotodo:session-status", onSession);
+      window.removeEventListener("dotodo:session-error", onSessionError);
+    };
+  }, [notify]);
+  useEffect(() => {
+    if (!testingReminder) return;
+    const timeout = setTimeout(() => {
+      setTestingReminder(false);
+      notify("앱에서 응답이 없어요. 최신 APK로 업데이트한 뒤 다시 시도해 주세요.");
+    }, 15000);
+    return () => clearTimeout(timeout);
+  }, [testingReminder, notify]);
   const [fileError, setFileError] = useState("");
   function exportData() {
     const blob = new Blob([JSON.stringify(state, null, 2)], {
@@ -201,6 +232,17 @@ export default function SettingsView({
           </button>
         </div>
       </form>
+      {session && <div className="settings-card">
+        <h3>앱 로그인</h3>
+        <div className="setting-row">
+          <span>{session.username}<small>{session.remembered
+            ? "이 기기에서 로그인을 유지하고 있어요." : "이번 실행 동안 로그인되어 있어요."}</small></span>
+          <button className="btn small" onClick={() =>
+            window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "DOTODO_SIGN_OUT" }))}>
+            로그아웃
+          </button>
+        </div>
+      </div>}
       <div className="settings-card">
         <h3>
           <Icon name="bell" size={18} />
@@ -249,6 +291,13 @@ export default function SettingsView({
               : "알림 허용"}
           </button>}
         </div>
+        {app && <div className="setting-row">
+          <span>알림 테스트<small>5초 뒤 앱 알림을 보내 수신 여부를 확인해요.</small></span>
+          <button className="btn small" disabled={testingReminder} onClick={() => {
+            setTestingReminder(true);
+            window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "DOTODO_REMINDER_TEST" }));
+          }}>{testingReminder ? "예약 중…" : "테스트 알림 보내기"}</button>
+        </div>}
       </div>
       <div className="settings-card">
         <h3>
