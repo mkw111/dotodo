@@ -50,7 +50,8 @@ export async function syncReminders(reminders: Reminder[], allowed: boolean) {
     const data = request.content.data;
     if (data?.source !== source) continue;
     const item = wanted.get(String(data.taskId));
-    if (item && item.at === data.at && item.title === request.content.body) {
+    if (item && request.identifier === `dotodo-task:${item.taskId}` &&
+        item.at === data.at && item.title === request.content.body) {
       wanted.delete(item.taskId);
     } else {
       await Notifications.cancelScheduledNotificationAsync(request.identifier);
@@ -59,6 +60,7 @@ export async function syncReminders(reminders: Reminder[], allowed: boolean) {
   for (const item of wanted.values()) {
     if (item.at <= Date.now()) continue;
     await Notifications.scheduleNotificationAsync({
+      identifier: `dotodo-task:${item.taskId}`,
       content: {
         title: "dotodo · 일정 알림",
         body: item.title,

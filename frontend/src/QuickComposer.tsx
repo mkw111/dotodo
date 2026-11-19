@@ -12,6 +12,7 @@ export default function QuickComposer({
   onAdd,
   onDetails,
   sheetLists,
+  defaultListId = "inbox",
 }: {
   today: string;
   defaultDate: string;
@@ -19,11 +20,12 @@ export default function QuickComposer({
   onAdd: (input: Partial<Task> & { title: string }) => Promise<boolean>;
   onDetails: (input: Partial<Task> & { title: string }) => void;
   sheetLists?: TaskList[];
+  defaultListId?: string;
 }) {
   const [text, setText] = useState("");
   const [ignored, setIgnored] = useState<string[]>([]);
   const [date, setDate] = useState<string | null>(null);
-  const [listId, setListId] = useState("inbox");
+  const [listId, setListId] = useState(defaultListId);
   const [priority, setPriority] = useState<Priority | null>(null);
   const editor = useRef<HTMLDivElement>(null);
   const appendedPreset = useRef(false);

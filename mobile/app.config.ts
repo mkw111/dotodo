@@ -2,6 +2,7 @@ export default {
   expo: {
     name: "dotodo",
     slug: "dotodo",
+    scheme: "dotodo",
     version: "0.3.0",
     orientation: "portrait",
     userInterfaceStyle: "light",
@@ -13,7 +14,7 @@ export default {
     },
     android: {
       package: "com.dotodo.app",
-      versionCode: 3,
+      versionCode: 4,
       permissions: ["android.permission.SCHEDULE_EXACT_ALARM"],
     },
     plugins: ["expo-notifications", "expo-secure-store", "./plugins/withLocalWebView"],

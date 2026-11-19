@@ -24,6 +24,28 @@ public class WorkspaceService {
     }
     // Commit inside the lock: concurrent first loads cannot create duplicate documents.
     public synchronized Snapshot get() { return transaction.execute(status -> snapshot(document())); }
+    public synchronized Snapshot widget(String day) {
+        java.time.LocalDate date = widgetDay(day);
+        Snapshot current = get();
+        ObjectNode data = ((ObjectNode) current.data()).deepCopy();
+        return WidgetWorkspace.prepareDaily(data, date) ? save(current.revision(), data) : current;
+    }
+    public synchronized Snapshot completeFromWidget(String id, String day) {
+        java.time.LocalDate date = widgetDay(day);
+        Snapshot current = get();
+        ObjectNode data = ((ObjectNode) current.data()).deepCopy();
+        boolean prepared = WidgetWorkspace.prepareDaily(data, date);
+        boolean completed = WidgetWorkspace.complete(data, id, date);
+        return prepared || completed ? save(current.revision(), data) : current;
+    }
+    private java.time.LocalDate widgetDay(String day) {
+        try {
+            if (day == null || !day.matches("\\d{4}-\\d{2}-\\d{2}")) throw new IllegalArgumentException();
+            return java.time.LocalDate.parse(day);
+        } catch (RuntimeException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "날짜를 확인해 주세요.");
+        }
+    }
     public synchronized Snapshot save(Long revision,JsonNode data) {
         validator.validate(data);
         return transaction.execute(status -> {

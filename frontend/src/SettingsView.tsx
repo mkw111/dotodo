@@ -236,7 +236,8 @@ export default function SettingsView({
         <h3>앱 로그인</h3>
         <div className="setting-row">
           <span>{session.username}<small>{session.remembered
-            ? "이 기기에서 로그인을 유지하고 있어요." : "이번 실행 동안 로그인되어 있어요."}</small></span>
+            ? "이 기기에서 로그인을 유지하고 있어요. 홈 화면에 오늘 할 일 위젯을 추가할 수 있어요."
+            : "이번 실행 동안 로그인되어 있어요. 위젯을 사용하려면 로그인 유지를 켜 주세요."}</small></span>
           <button className="btn small" onClick={() =>
             window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "DOTODO_SIGN_OUT" }))}>
             로그아웃

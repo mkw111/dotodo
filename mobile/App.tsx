@@ -19,6 +19,7 @@ import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
 import embeddedWeb from "./embeddedWeb";
 import { readReminders, reminderPermission, subscribeToReminderOpens, syncReminders, testReminder } from "./reminders";
+import { updateWidgetSession, updateWidgetSnapshot } from "./widget";
 
 const embedded = Platform.OS === "android" && Boolean(embeddedWeb);
 const WEB_URL = embedded ? "https://dotodo.invalid/" :
@@ -51,7 +52,29 @@ export default function App() {
   const latestReminders = useRef<ReturnType<typeof readReminders>>(null);
   const reminderQueue = useRef(Promise.resolve());
   const pendingTask = useRef<string | null>(null);
+  const pendingWidget = useRef<{ action: string; taskId: string; category: string } | null>(null);
   const permissionAsked = useRef(false);
+  useEffect(() => {
+    if (!deployed || restoring) return;
+    void updateWidgetSession(WEB_URL, rememberLogin ? credentials : undefined)
+      .catch(() => emit("dotodo:session-error", "위젯 로그인 연결에 실패했어요. 다시 로그인해 주세요."));
+  }, [credentials, restoring, rememberLogin]);
+  useEffect(() => {
+    function receive(url: string | null) {
+      if (!url) return;
+      try {
+        const link = new URL(url);
+        if (link.protocol !== "dotodo:" || link.hostname !== "widget") return;
+        const action = link.pathname.slice(1);
+        if (!["today", "add", "task"].includes(action)) return;
+        pendingWidget.current = { action, taskId: link.searchParams.get("task") || "", category: link.searchParams.get("category") || "all" };
+        emit("dotodo:widget-open", pendingWidget.current);
+      } catch { /* Ignore unrelated links. */ }
+    }
+    void Linking.getInitialURL().then(receive);
+    const subscription = Linking.addEventListener("url", ({ url }) => receive(url));
+    return () => subscription.remove();
+  }, []);
   useEffect(() => {
     if (!deployed) return;
     let active = true;
@@ -77,6 +100,7 @@ export default function App() {
   }, []);
   async function signOut() {
     try {
+      await updateWidgetSession(WEB_URL);
       await SecureStore.deleteItemAsync(credentialKey, secureOptions);
     } catch {
       emit("dotodo:session-error", "기기의 로그인 정보를 지우지 못했어요. 다시 시도해 주세요.");
@@ -144,6 +168,7 @@ export default function App() {
       if (state === "active") {
         reconcile();
         emit("dotodo:refresh-reminders", null);
+        emit("dotodo:widget-refresh", null);
       }
     });
     return () => {
@@ -279,6 +304,13 @@ export default function App() {
                   void signOut();
                 } else if (message.type === "DOTODO_SESSION_STATUS" && deployed) {
                   emit("dotodo:session-status", { username: credentials?.username, remembered: rememberLogin });
+                } else if (message.type === "DOTODO_WIDGET_SYNC" && deployed && credentials && rememberLogin) {
+                  void updateWidgetSnapshot(message.workspace)
+                    .catch(() => emit("dotodo:session-error", "위젯 갱신에 실패했어요. 앱을 다시 열어 주세요."));
+                } else if (message.type === "DOTODO_WIDGET_READY") {
+                  if (pendingWidget.current) emit("dotodo:widget-open", pendingWidget.current);
+                } else if (message.type === "DOTODO_WIDGET_OPENED") {
+                  pendingWidget.current = null;
                 } else if (message.type === "DOTODO_REMINDER_SETTINGS") {
                   void Linking.openSettings().catch(() => emit("dotodo:reminder-status", "error"));
                 }

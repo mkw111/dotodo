@@ -270,6 +270,37 @@ export default function App() {
     };
   }, [state?.tasks]);
   useEffect(() => {
+    if (!state || !window.ReactNativeWebView) return;
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: "DOTODO_WIDGET_SYNC", workspace: state }));
+    const openWidget = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || !["today", "add", "task"].includes(detail.action) || !canLeaveDetail()) return;
+      setQuery("");
+      setSearchOpen(false);
+      setSidebarOpen(false);
+      setHomeDate(null);
+      setView("today");
+      setSelected(null);
+      setNewEditor(null);
+      if (detail.action === "add") setQuickAddOpen(true);
+      setHomeCategory(detail.category === "inbox" || state.lists.some((list) => list.id === detail.category) ? detail.category : "all");
+      if (detail.action === "task") {
+        const task = state.tasks.find((item) => item.id === detail.taskId && !item.deletedAt);
+        if (task) setSelected(task.id);
+        else setNotice("이 할 일을 찾을 수 없어요. 새로 불러와 주세요.");
+      }
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "DOTODO_WIDGET_OPENED" }));
+    };
+    const refreshWidget = () => { void load(); };
+    window.addEventListener("dotodo:widget-open", openWidget);
+    window.addEventListener("dotodo:widget-refresh", refreshWidget);
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: "DOTODO_WIDGET_READY" }));
+    return () => {
+      window.removeEventListener("dotodo:widget-open", openWidget);
+      window.removeEventListener("dotodo:widget-refresh", refreshWidget);
+    };
+  }, [state, load]);
+  useEffect(() => {
     if (
       !state ||
       window.ReactNativeWebView ||
@@ -1676,6 +1707,7 @@ export default function App() {
         {quickAddOpen && (
           <QuickAddSheet
             today={today}
+            defaultListId={homeCategory === "all" ? "inbox" : homeCategory}
             defaultDate={displayedDay}
             sheetLists={state.lists}
             busy={busy}

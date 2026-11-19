@@ -71,4 +71,31 @@ class WorkspaceApiTest {
         snapshot=load(); ((ObjectNode)snapshot.path("data").path("rewards").get(0)).put("xp",999);
         mvc.perform(put("/api/workspace").contentType("application/json").content(snapshot.toString())).andExpect(status().isBadRequest());
     }
+    @Test void widgetCompletionPreservesHistoryAndIsIdempotent() throws Exception {
+        ObjectNode snapshot = load();
+        ObjectNode data = (ObjectNode) snapshot.get("data");
+        ObjectNode task = ((ArrayNode) data.get("tasks")).addObject();
+        task.put("id", "widget-daily").put("title", "기도").put("notes", "").put("listId", "work")
+            .put("date", "2026-11-18").put("time", "09:00").put("priority", 1).put("repeat", "daily")
+            .put("habitId", "widget-habit").put("completed", false).putNull("completedAt").putNull("deletedAt")
+            .put("createdAt", "2026-11-18T00:00:00Z").put("order", 1);
+        task.putArray("tags"); task.putArray("checklist").addObject().put("id", "check").put("title", "시작").put("done", true);
+        ((ArrayNode) data.get("habits")).addObject().put("id", "widget-habit").put("name", "기도")
+            .put("icon", "habit").put("color", "#4776e6").put("goal", 1).putObject("checks");
+        mvc.perform(put("/api/workspace").contentType("application/json").content(snapshot.toString())).andExpect(status().isOk());
+        ObjectNode prepared = (ObjectNode) mapper.readTree(mvc.perform(get("/api/workspace/widget?day=2026-11-19"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertEquals(3, prepared.path("data").path("tasks").size());
+        assertEquals("2026-11-18", prepared.path("data").path("tasks").get(0).path("date").asText());
+        assertFalse(prepared.path("data").path("tasks").get(1).path("checklist").get(0).path("done").asBoolean());
+        String id = prepared.path("data").path("tasks").get(1).path("id").asText();
+        String endpoint = "/api/workspace/tasks/" + id + "/complete?day=2026-11-19";
+        mvc.perform(post(endpoint)).andExpect(status().isOk()).andExpect(jsonPath("$.data.tasks[1].completed").value(true));
+        mvc.perform(post(endpoint)).andExpect(status().isOk()).andExpect(jsonPath("$.data.habits[0].checks['2026-11-19']").value(1));
+        assertEquals(3, load().path("data").path("tasks").size());
+        mvc.perform(put("/api/workspace").contentType("application/json").content(prepared.toString())).andExpect(status().isConflict());
+        mvc.perform(post("/api/workspace/tasks/missing/complete?day=2026-11-19")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/workspace/widget?day=bad-date")).andExpect(status().isBadRequest());
+    }
+
 }
