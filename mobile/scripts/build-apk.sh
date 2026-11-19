@@ -24,5 +24,9 @@ case "${1:-demo}" in
 esac
 cd mobile
 ./node_modules/.bin/expo prebuild --platform android --no-install
+# Gradle does not track Expo's public environment variables as bundle inputs.
+# Remove the generated bundle when switching between demo and deployed builds.
+rm -rf android/app/build/generated/assets/createBundleReleaseJsAndAssets \
+  android/app/build/generated/res/createBundleReleaseJsAndAssets
 cd android
 ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a
