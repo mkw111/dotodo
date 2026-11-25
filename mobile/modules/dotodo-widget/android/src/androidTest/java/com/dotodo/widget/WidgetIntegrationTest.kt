@@ -11,6 +11,17 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class WidgetIntegrationTest {
+  @Test fun widgetActionsUseViewIntentsForReactNativeLinking() {
+    for (action in listOf("today", "add", "task")) {
+      val base = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+      val routed = TodayWidget.routeIntent(base, action, "task-id", "faith")
+      assertEquals(android.content.Intent.ACTION_VIEW, routed.action)
+      assertFalse(routed.hasCategory(android.content.Intent.CATEGORY_LAUNCHER))
+      assertEquals("/$action", routed.data?.path)
+      assertEquals("task-id", routed.data?.getQueryParameter("task"))
+      assertEquals("faith", routed.data?.getQueryParameter("category"))
+    }
+  }
   @Test fun encryptedSessionAndFilteringAndLayout() {
     val instrumentation = InstrumentationRegistry.getInstrumentation()
     val context = instrumentation.targetContext

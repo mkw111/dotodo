@@ -14,7 +14,7 @@ export default {
     },
     android: {
       package: "com.dotodo.app",
-      versionCode: 4,
+      versionCode: 5,
       permissions: ["android.permission.SCHEDULE_EXACT_ALARM"],
     },
     plugins: ["expo-notifications", "expo-secure-store", "./plugins/withLocalWebView"],

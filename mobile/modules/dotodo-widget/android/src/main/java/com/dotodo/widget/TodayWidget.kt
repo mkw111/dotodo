@@ -44,16 +44,19 @@ class TodayWidget : AppWidgetProvider() {
       .getAppWidgetIds(ComponentName(context, TodayWidget::class.java))
     fun openApp(context: Context, action: String, task: String = "") {
       val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+      context.startActivity(routeIntent(intent, action, task))
+    }
+    fun routeIntent(intent: Intent, action: String, task: String = "", category: String = "all"): Intent {
+      // React Native Linking delivers deep links only for VIEW intents.
+      intent.action = Intent.ACTION_VIEW
+      intent.removeCategory(Intent.CATEGORY_LAUNCHER)
       intent.data = Uri.Builder().scheme("dotodo").authority("widget").appendPath(action)
-        .appendQueryParameter("task", task).build()
+        .appendQueryParameter("task", task).appendQueryParameter("category", category).build()
       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-      context.startActivity(intent)
+      return intent
     }
     private fun appIntent(context: Context, action: String, category: String = "all"): PendingIntent {
-      val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
-      launch.data = Uri.Builder().scheme("dotodo").authority("widget").appendPath(action)
-        .appendQueryParameter("category", category).build()
-      launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      val launch = routeIntent(requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName)), action, category = category)
       return PendingIntent.getActivity(context, (action + category).hashCode(), launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
     fun refresh(context: Context, taskId: String? = null) {
