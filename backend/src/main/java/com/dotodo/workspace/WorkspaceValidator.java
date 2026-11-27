@@ -52,6 +52,7 @@ public class WorkspaceValidator {
                 array(t.get("checklist"),100); unique(t.get("checklist")); for (JsonNode c : t.get("checklist")) require(text(c,"title",1,150) && !c.get("title").asText().isBlank() && bool(c,"done"));
                 if (t.has("habitId")) require(text(t, "habitId", 1, 100) && habits.contains(t.get("habitId").asText()));
                 if(t.has("recurrenceSource")) require(text(t,"recurrenceSource",1,100));
+                if(t.has("autoCarry")) require(bool(t, "autoCarry"));
                 if(t.has("repeatDay")) require(integer(t,"repeatDay",1,31));
                 if (t.has("reminderMinutes")) require(integer(t, "reminderMinutes", 0, 10080));
                 if(t.has("durationMinutes")) require(integer(t,"durationMinutes",t.path("actual").asBoolean() ? 1 : 15,720));

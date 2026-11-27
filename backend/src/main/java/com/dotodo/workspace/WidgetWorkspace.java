@@ -27,7 +27,7 @@ final class WidgetWorkspace {
                 || !task.path("deletedAt").isNull() && task.has("deletedAt")
                 || task.path("date").asText().isEmpty() || parents.contains(task.path("id").asText())) continue;
             LocalDate date = LocalDate.parse(task.get("date").asText());
-            if (!date.isBefore(day.plusDays(1))) continue;
+            if (!date.isBefore(day)) continue;
             tasks.add(successor(task));
             parents.add(task.get("id").asText());
         }
@@ -55,7 +55,7 @@ final class WidgetWorkspace {
                 }
             }
         }
-        if (!"none".equals(task.path("repeat").asText()) && !hasSuccessor && tasks.size() < 10000) {
+        if (!"none".equals(task.path("repeat").asText()) && !"daily".equals(task.path("repeat").asText()) && !hasSuccessor && tasks.size() < 10000) {
             tasks.add(successor(task));
         }
         return true;

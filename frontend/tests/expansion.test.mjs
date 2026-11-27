@@ -231,7 +231,8 @@ test("multi-day all-day dates are inclusive and preserve their length when moved
   assert.throws(() => validateWorkspace({ ...workspace, tasks: [{ ...task, endDate: "2026-11-27" }] }));
 });
 
-test("daily tasks share one linked habit through recurrence and completion undo", () => {
+test("daily tasks share one linked habit through recurrence and completion undo", async () => {
+  const { materializeDailyTasks, addDays } = await import("../src/model.ts");
   const task = newTask("매일 독서", { date: localDate(), repeat: "daily" });
   let workspace = saveTaskWithHabit(createWorkspace(false), task, true);
   const habitId = workspace.tasks[0].habitId;
@@ -240,11 +241,13 @@ test("daily tasks share one linked habit through recurrence and completion undo"
   assert.equal(validateWorkspace(workspace).tasks[0].habitId, habitId);
   workspace = toggleTask(workspace, task.id);
   assert.equal(count(), 1);
-  assert.equal(workspace.tasks.find((item) => item.recurrenceSource === task.id).habitId, habitId);
+  assert.equal(workspace.tasks.length, 1);
   workspace = toggleTask(workspace, task.id);
   assert.equal(count(), 0);
   workspace = toggleTask(workspace, task.id);
   assert.equal(count(), 1);
+  workspace = materializeDailyTasks(workspace, addDays(localDate(), 1));
+  assert.equal(workspace.tasks[1].habitId, habitId);
   assert.equal(workspace.tasks.length, 2);
   workspace = saveTaskWithHabit(workspace, workspace.tasks[1], true);
   assert.equal(workspace.habits.filter((habit) => habit.id === habitId).length, 1);
@@ -261,12 +264,12 @@ test("linked habit checks complete tasks and undo without duplicating tomorrow",
   state = checkHabit(state, id, localDate());
   assert.equal(state.tasks.find((item) => item.id === task.id).completed, true);
   assert.equal(state.habits[0].checks[localDate()], 1);
-  assert.equal(state.tasks.length, 2);
+  assert.equal(state.tasks.length, 1);
   state = checkHabit(state, id, localDate(), true);
   assert.equal(state.tasks.find((item) => item.id === task.id).completed, false);
   assert.equal(state.habits[0].checks[localDate()], 0);
   state = checkHabit(state, id, localDate());
-  assert.equal(state.tasks.length, 2);
+  assert.equal(state.tasks.length, 1);
   state = toggleTask(state, task.id);
   assert.equal(state.habits[0].checks[localDate()], 0);
   validateWorkspace(state);
@@ -277,7 +280,7 @@ test("daily occurrences appear without completion and preserve missed dates", as
   const base = createWorkspace();
   const task = newTask("기도", { date: "2026-11-17", repeat: "daily" });
   const state = materializeDailyTasks({ ...base, tasks: [task] }, "2026-11-19");
-  assert.deepEqual(state.tasks.map((item) => item.date), ["2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"]);
+  assert.deepEqual(state.tasks.map((item) => item.date), ["2026-11-17", "2026-11-18", "2026-11-19"]);
   assert.ok(state.tasks.every((item) => !item.completed));
   assert.equal(state.tasks[0], task);
   assert.equal(materializeDailyTasks(state, "2026-11-19"), state);
@@ -292,7 +295,7 @@ test("category carry settings preserve dates and daily tasks never carry", async
   const state = createWorkspace();
   const list = state.lists[0];
   const task = newTask("연락", { date: "2026-11-18", listId: list.id });
-  assert.equal(carriesToDay(task, state.lists, "2026-11-19"), true);
+  assert.equal(carriesToDay(task, state.lists, "2026-11-19"), false);
   assert.equal(carriesToDay(task, [{ ...list, autoCarry: false }], "2026-11-19"), false);
   assert.equal(carriesToDay({ ...task, repeat: "daily" }, state.lists, "2026-11-19"), false);
   assert.equal(task.date, "2026-11-18");
@@ -306,10 +309,29 @@ test("renaming linked tasks updates habit and future occurrences while preservin
   let state = saveTaskWithHabit({ ...createWorkspace(), tasks: [task], habits: [] }, task, true);
   state = materializeDailyTasks(state, "2026-11-19");
   const current = state.tasks.find((item) => item.date === "2026-11-19");
-  const next = saveTaskWithHabit(state, { ...current, title: "독서 20분" });
+  const next = materializeDailyTasks(saveTaskWithHabit(state, { ...current, title: "독서 20분" }), "2026-11-20");
   assert.equal(next.habits[0].name, "독서 20분");
   assert.equal(next.tasks.find((item) => item.date === "2026-11-20").title, "독서 20분");
   assert.equal(next.tasks[0].title, "독서");
   assert.deepEqual(next.habits[0].checks, state.habits[0].checks);
   validateWorkspace(next);
 });
+
+test("carry is opt-in with task overrides and completion never advances daily dates", async () => {
+  const { carriesToDay, materializeDailyTasks } = await import("../src/model.ts");
+  const base = createWorkspace(false);
+  const task = newTask("업무", { date: "2026-11-18", listId: "inbox" });
+  const lists = [{ id: "inbox", autoCarry: true }];
+  assert.equal(carriesToDay(task, lists, "2026-11-19"), true);
+  assert.equal(carriesToDay({ ...task, autoCarry: false }, lists, "2026-11-19"), false);
+  assert.equal(carriesToDay({ ...task, autoCarry: true }, [], "2026-11-19"), true);
+  assert.equal(carriesToDay({ ...task, completed: true }, lists, "2026-11-19"), false);
+  let state = { ...base, tasks: [{ ...task, repeat: "daily" }] };
+  for (let i = 0; i < 5; i++) state = materializeDailyTasks(toggleTask(state, task.id), "2026-11-18");
+  assert.equal(state.tasks.length, 1);
+  state = materializeDailyTasks(state, "2026-11-19");
+  assert.equal(state.tasks.length, 2);
+  assert.equal(state.tasks[1].date, "2026-11-19");
+  assert.equal(state.tasks[1].completed, false);
+  assert.throws(() => validateWorkspace({ ...base, tasks: [{ ...task, autoCarry: "true" }] }));
+ });

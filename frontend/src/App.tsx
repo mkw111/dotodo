@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from "react";
 import Icon from "./Icon";
+import DayNavigator from "./DayNavigator";
 import { appReminders } from "./AppReminders";
 import Modal, { SaveErrorContext } from "./Modal";
 import TaskDetail from "./TaskDetail";
@@ -54,14 +55,14 @@ const smartViews: { id: View; name: string; icon: string; color: string }[] = [
 const sections = [
   { id: "today", name: "할 일", icon: "tasks" },
   { id: "calendar", name: "캘린더", icon: "calendar" },
-  { id: "matrix", name: "매트릭스", icon: "matrix" },
+  { id: "matrix", name: "우선순위", icon: "matrix" },
   { id: "focus", name: "집중", icon: "focus" },
   { id: "habits", name: "습관", icon: "habit" },
 ] as const;
 const specialTitles: Record<string, string> = {
   rank: "나의 랭크",
   calendar: "캘린더",
-  matrix: "아이젠하워 매트릭스",
+  matrix: "우선순위",
   focus: "집중",
   habits: "습관",
   settings: "설정",
@@ -78,6 +79,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const [matrixPriority, setMatrixPriority] = useState<Priority | "all">("all");
+  const [matrixScope, setMatrixScope] = useState<"today" | "all">("today");
   const [sort, setSort] = useState("order");
   const [group, setGroup] = useState("date");
   const [homeCategory, setHomeCategory] = useState("all");
@@ -406,13 +409,13 @@ export default function App() {
   const pending = sorted.filter((t) => !t.completed);
   const completed = sorted.filter((t) => t.completed);
   const todayDone = dayTasks.filter((t) => completedOn(t, displayedDay)).length;
-  const todayTotal = todayDone + dayTasks.filter((t) => !t.completed && scheduledOn(t, displayedDay)).length;
+  const todayTotal = todayDone + dayTasks.filter((t) => !t.completed && (scheduledOn(t, displayedDay) || carriesToDay(t, state.lists, displayedDay))).length;
   const progress = todayTotal
     ? Math.round((todayDone / todayTotal) * 100)
     : 0;
   const subtitle =
     view === "today"
-      ? "중요한 것부터 하나씩, 나만의 속도로."
+      ? pending.length ? `남은 할 일 ${pending.length}개. 하나씩 마무리해 보세요.` : "새로운 하루를 가볍게 시작하세요."
       : view === "calendar"
       ? "계획을 한눈에 보고, 하루에 여유를 더하세요."
       : view === "habits"
@@ -420,7 +423,7 @@ export default function App() {
       : view === "focus"
       ? "산만한 생각은 잠시 내려놓고."
       : view === "matrix"
-      ? "급한 일과 중요한 일 사이, 균형을 찾아요."
+      ? "먼저 할 일을 정하고, 한 가지씩 끝내세요."
       : view === "trash"
       ? "삭제한 할 일을 복원하거나 영구 삭제할 수 있어요."
       : "머릿속의 할 일을 꺼내 놓는 공간.";
@@ -581,7 +584,7 @@ export default function App() {
     return (
       <article
         key={task.id}
-        data-priority={home && task.priority ? task.priority : undefined}
+        data-priority={task.priority || undefined}
         className={`task-row ${task.completed ? "completed" : ""} ${
           selected === task.id ? "selected" : ""
         } ${compact ? "compact" : ""}`}
@@ -657,7 +660,7 @@ export default function App() {
               </span>
             )}
             {task.repeat !== "none" && <span className="task-repeat-label"><Icon name="repeat" size={12} />{repeatNames[task.repeat]}</span>}
-            {task.habitId && <span className="task-habit-label">습관 연동</span>}
+            {task.habitId && <span className="task-habit-label"><Icon name="habit" size={12} />습관</span>}
             {home && carriesToDay(task, state!.lists, displayedDay) &&
               <span className="task-carry-label">{dateLabel(task.date, today)}부터</span>}
           </span>
@@ -726,7 +729,7 @@ export default function App() {
         ) : (
           <label className={`icon-btn priority-flag priority-picker p${task.priority}`}
             title={task.priority ? `우선순위 ${task.priority}` : "우선순위 없음"}>
-            <Icon name="flag" size={24} flagNumber={task.priority || undefined} />
+            <Icon name="flag" size={18} flagNumber={task.priority || undefined} />
             <select aria-label={`${task.title} 우선순위 변경`}
               value={task.priority} disabled={busy}
               onChange={(event) => void patchTask(task.id, {
@@ -984,7 +987,7 @@ export default function App() {
               <Icon name="menu" />
             </button>
             <div className="breadcrumb">
-              <span>나의 공간</span>
+              <span className="topbar-wordmark">dotodo<span>.</span></span>
               <span>/</span>
               <strong>{title}</strong>
             </div>
@@ -1052,25 +1055,6 @@ export default function App() {
                 event.preventDefault();
                 event.stopPropagation();
               }}>
-              {view === "today" && !query && (
-                <div className="home-day-nav">
-                  <button className="icon-btn" aria-label="전날" onClick={() => shiftHome(-1)}><Icon name="left" size={17} /></button>
-                  <strong>{dayTitle}</strong>
-                  <button className="icon-btn" aria-label="다음 날" onClick={() => shiftHome(1)}><Icon name="right" size={17} /></button>
-                  <button className="btn small home-review-btn" onClick={() => {
-                    if (!canLeaveDetail()) return;
-                    setCalendarStart(displayedDay);
-                    navigate("calendar", "review");
-                  }}>하루 돌아보기</button>
-                  {homeDate && <button className="btn small" onClick={() => {
-                    if (canLeaveDetail()) {
-                      setHomeDate(null);
-                      setSelected(null);
-                      setChecked([]);
-                    }
-                  }}>오늘로</button>}
-                </div>
-              )}
               <div className="page-heading">
                 <div>
                   {!home && <div className="page-eyebrow">
@@ -1145,6 +1129,18 @@ export default function App() {
               )}
               {!special || query ? (
                 <>
+                  {home && <DayNavigator day={displayedDay} today={today} weekStart={state.settings.weekStart}
+                    tasks={dayTasks} onSelect={(day) => {
+                      if (!canLeaveDetail()) return;
+                      setHomeDate(day === today ? null : day); setSelected(null); setChecked([]);
+                    }} onReview={() => {
+                      if (!canLeaveDetail()) return;
+                      setCalendarStart(displayedDay); navigate("calendar", "review");
+                    }} />}
+                  {home && <button className="inline-task-add" onClick={openQuickAdd}>
+                    <span><Icon name="plus" size={20} /></span>
+                    <strong>할 일 추가</strong><small>무엇을 해야 하나요?</small><kbd>N</kbd>
+                  </button>}
                   {view === "today" && !query && (
                     <nav className="home-category-strip" aria-label="카테고리별 할 일">
                       {[{ id: "all", name: "전체" }, { id: "inbox", name: "수집함" }, ...state.lists].map((list) =>
@@ -1162,10 +1158,9 @@ export default function App() {
                   )}
                   {view === "today" && !query && (
                     <section className="day-summary" aria-label="하루 진행 상황">
-                      <div><strong>{dayTasks.filter((task) => completedOn(task, displayedDay)).length}</strong><span>완료</span></div>
-                      <div><strong>{dayTasks.filter((task) => !task.completed && scheduledOn(task, displayedDay)).length}</strong><span>예정</span></div>
-                      <div><strong>{dayTasks.filter((task) => !task.completed && carriesToDay(task, state.lists, displayedDay)).length}</strong><span>이어서 할 일</span></div>
-                      <progress max={100} value={progress} aria-label="예정된 할 일 완료율" />
+                      <div className="day-summary-copy"><Icon name="check" size={16} /><strong>{todayDone}</strong><span>/ {todayTotal}개 완료</span></div>
+                      <progress max={100} value={progress} aria-label="할 일 완료율" />
+                      <span className="day-summary-percent">{progress}%</span>
                     </section>
                   )}
                   {!home && view !== "trash" && view !== "completed" && (
@@ -1366,12 +1361,12 @@ export default function App() {
                           ? "휴지통이 비어 있어요"
                           : view === "completed"
                           ? "아직 완료한 일이 없어요"
-                          : "마음에도 여백을 남겨요"}
+                          : completed.length ? "할 일을 모두 마쳤어요" : "아직 등록된 할 일이 없어요"}
                       </h3>
                       <p>
                         {query
                           ? "다른 검색어로 다시 찾아보세요."
-                          : "새로운 할 일을 더해, 작은 시작을 만들어 보세요."}
+                          : view === "trash" ? "삭제한 할 일이 여기에 표시돼요." : "할 일을 추가하고 하루를 계획해 보세요."}
                       </p>
                     </div>
                   )}
@@ -1379,7 +1374,7 @@ export default function App() {
                     view !== "completed" &&
                     view !== "trash" &&
                     completed.length > 0 && (
-                      <details className="completed-section" open>
+                      <details className="completed-section">
                         <summary>
                           <Icon name="chevron" size={13} />
                           완료한 일<span>{completed.length}</span>
@@ -1440,7 +1435,21 @@ export default function App() {
               ) : view === "rank" ? (
                 <RankView state={state} onNavigate={navigate} />
               ) : (
-                <section className="matrix-grid">
+                <section className="matrix-workspace">
+                  <div className="matrix-controls">
+                    <div className="segmented" aria-label="우선순위 표시 범위">
+                      <button className={matrixScope === "today" ? "selected" : ""} aria-pressed={matrixScope === "today"} onClick={() => setMatrixScope("today")}>오늘 할 일</button>
+                      <button className={matrixScope === "all" ? "selected" : ""} aria-pressed={matrixScope === "all"} onClick={() => setMatrixScope("all")}>전체 할 일</button>
+                    </div>
+                    <span>중요도와 긴급도로 정리하기</span>
+                  </div>
+                  <nav className="matrix-tabs" aria-label="우선순위 영역">
+                    {(["all", 1, 2, 3, 4] as const).map((priority, index) => <button key={priority}
+                      aria-pressed={matrixPriority === priority} onClick={() => setMatrixPriority(priority)}>
+                      {["전체", "지금 하기", "계획하기", "빠른 처리", "나중에"][index]}
+                    </button>)}
+                  </nav>
+                  <div className="matrix-grid">
                   {[
                     {
                       title: "지금 하기",
@@ -1468,11 +1477,12 @@ export default function App() {
                     },
                   ].map((q) => {
                     const items = active.filter(
-                      (task) => task.priority === q.priority
+                      (task) => task.priority === q.priority && (matrixScope === "all" || scheduledOn(task, today) || carriesToDay(task, state.lists, today))
                     );
                     return (
                       <section
                         className={`matrix-quadrant ${q.color}`}
+                        hidden={matrixPriority !== "all" && matrixPriority !== q.priority}
                         key={q.title}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => {
@@ -1494,20 +1504,28 @@ export default function App() {
                           <span>{items.length}</span>
                         </header>
                         {items.map((t) => row(t, true))}
+                        <button className="matrix-add" onClick={() => {
+                          if (!canLeaveDetail()) return;
+                          setSelected(null);
+                          setNewEditor(newTask("", { priority: q.priority, date: today }));
+                        }}><Icon name="plus" size={16} />할 일 추가</button>
                         {!items.length && (
                           <p className="matrix-empty">
-                            할 일을 이곳으로 끌어 정리해 보세요.
+                            아직 할 일이 없어요.
                           </p>
                         )}
                       </section>
                     );
                   })}
-                  <p className="view-tip">
-                    우선순위 1~4에 따라 표시됩니다. 칸을 옮기면 우선순위가 바뀝니다.
-                    {active.some((task) => task.priority === 0) && (
-                      <span> 우선순위 미지정 {active.filter((task) => task.priority === 0).length}개는 할 일 목록에서 지정해 주세요.</span>
-                    )}
-                  </p>
+                  </div>
+                  {matrixPriority === "all" && active.some((task) => task.priority === 0 &&
+                    (matrixScope === "all" || scheduledOn(task, today) || carriesToDay(task, state.lists, today))) && (
+                    <section className="matrix-unassigned">
+                      <header><h2>아직 분류하지 않은 일</h2><p>깃발을 눌러 우선순위를 정하세요.</p></header>
+                      {active.filter((task) => task.priority === 0 && (matrixScope === "all" || scheduledOn(task, today) || carriesToDay(task, state.lists, today))).map((task) => row(task, true))}
+                    </section>
+                  )}
+                  <p className="view-tip">업무의 깃발 버튼으로 우선순위를 바꿀 수 있어요.</p>
                 </section>
               )}
               <footer className="workspace-footer">
@@ -1553,7 +1571,7 @@ export default function App() {
         </main>
         {home && (
           <button className="home-quick-add" aria-label="할 일 추가" onClick={openQuickAdd}>
-            <Icon name="plus" size={28} />
+            <Icon name="plus" size={22} /><span>할 일 추가</span>
           </button>
         )}
         <nav className="mobile-bottom-nav" aria-label="주요 기능">
@@ -1563,6 +1581,7 @@ export default function App() {
               className={
                 view === s.id || (s.id === "today" && !special) ? "active" : ""
               }
+              aria-current={view === s.id || (s.id === "today" && !special) ? "page" : undefined}
               onClick={() => navigate(s.id)}
             >
               <Icon name={s.icon} size={20} />
@@ -1811,7 +1830,7 @@ function ListEditor({
 }) {
   const [name, setName] = useState(list?.name || "");
   const [color, setColor] = useState(list?.color || palette[0]);
-  const [autoCarry, setAutoCarry] = useState(list?.autoCarry !== false);
+  const [autoCarry, setAutoCarry] = useState(list?.autoCarry === true);
   return (
     <Modal title={list ? "리스트 수정" : "새로운 리스트"} onClose={onClose}>
       <form

@@ -27,7 +27,7 @@ object WidgetData {
     val carry = mutableMapOf<String, Boolean>()
     if (lists != null) for (i in 0 until lists.length()) {
       val list = lists.getJSONObject(i)
-      carry[list.getString("id")] = list.optBoolean("autoCarry", true)
+      carry[list.getString("id")] = list.optBoolean("autoCarry", false)
     }
     val date = today()
     val array = data.optJSONArray("tasks") ?: return emptyList()
@@ -36,7 +36,7 @@ object WidgetData {
       val end = task.optString("endDate", start)
       val scheduled = start.isNotEmpty() && start <= date && end >= date
       val visible = if (task.optBoolean("completed")) scheduled || completedOn(task, date)
-        else scheduled || start.isNotEmpty() && end < date && task.optString("repeat") != "daily" && carry[task.optString("listId")] != false
+        else scheduled || start.isNotEmpty() && end < date && task.optString("repeat") != "daily" && (if (task.has("autoCarry")) task.optBoolean("autoCarry") else carry[task.optString("listId")] == true)
       !task.optBoolean("actual") && task.isNull("deletedAt") &&
         (category == "all" || task.optString("listId") == category) && visible
     }

@@ -260,6 +260,16 @@ export default function TaskDetail({
             </select>
           </label>
         </div>
+        <label className="detail-select">
+          <span>자동 이월</span>
+          <select aria-label="업무 자동 이월" value={draft.autoCarry === undefined ? "category" : String(draft.autoCarry)}
+            onChange={(e) => change({ autoCarry: e.target.value === "category" ? undefined : e.target.value === "true" })}>
+            <option value="category">카테고리 설정 따르기</option>
+            <option value="true">켜기</option>
+            <option value="false">끄기</option>
+          </select>
+          <small>매일 반복 업무는 이월 없이 날짜별로 생성돼요.</small>
+        </label>
         {draft.repeat === "daily" && draft.date && (
           <label className="detail-select linked-habit-option">
             <Icon name="habit" size={16} />

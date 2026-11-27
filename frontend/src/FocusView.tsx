@@ -98,8 +98,8 @@ export default function FocusView({
                 {running
                   ? "나만의 속도로 집중하는 중"
                   : timer.mode === "focus"
-                  ? "FOCUS ON WHAT MATTERS"
-                  : "TAKE A LITTLE BREATH"}
+                  ? "시작을 눌러 집중하세요"
+                  : "잠시 쉬어가세요"}
               </small>
             </div>
           </div>

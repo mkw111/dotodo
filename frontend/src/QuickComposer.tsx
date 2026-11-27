@@ -161,7 +161,7 @@ export default function QuickComposer({
         <>
           <div className="sheet-quick-options">
             <button className="sheet-chip sheet-details" type="button" aria-label="상세 입력"
-              title="상세 입력" onClick={showDetails}><Icon name="plus" size={18} /></button>
+              title="상세 입력" onClick={showDetails}><Icon name="list" size={16} /><span>상세</span></button>
             <label className="sheet-chip sheet-list-chip">
               <Icon name="list" size={15} />
               <select aria-label="할 일 리스트" value={listId} onChange={(event) => setListId(event.target.value)}>
@@ -279,7 +279,7 @@ export function QuickAddSheet({ onClose, ...composer }: Parameters<typeof QuickC
             event.clientY < rect.top || event.clientY > rect.bottom) onClose();
       }}>
       <div className="quick-sheet-header">
-        <i aria-hidden="true" />
+        <strong>새 할 일</strong>
         <button className="icon-btn" aria-label="빠른 등록 닫기" disabled={composer.busy}
           onClick={onClose}><Icon name="close" size={17} /></button>
       </div>

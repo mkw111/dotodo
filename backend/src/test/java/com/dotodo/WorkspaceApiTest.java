@@ -85,7 +85,7 @@ class WorkspaceApiTest {
         mvc.perform(put("/api/workspace").contentType("application/json").content(snapshot.toString())).andExpect(status().isOk());
         ObjectNode prepared = (ObjectNode) mapper.readTree(mvc.perform(get("/api/workspace/widget?day=2026-11-19").header("X-Dotodo-Widget", "1"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
-        assertEquals(3, prepared.path("data").path("tasks").size());
+        assertEquals(2, prepared.path("data").path("tasks").size());
         assertEquals("2026-11-18", prepared.path("data").path("tasks").get(0).path("date").asText());
         assertFalse(prepared.path("data").path("tasks").get(1).path("checklist").get(0).path("done").asBoolean());
         String id = prepared.path("data").path("tasks").get(1).path("id").asText();
@@ -93,7 +93,7 @@ class WorkspaceApiTest {
         mvc.perform(post(endpoint)).andExpect(status().isUnsupportedMediaType());
         mvc.perform(post(endpoint).contentType("application/json")).andExpect(status().isOk()).andExpect(jsonPath("$.data.tasks[1].completed").value(true));
         mvc.perform(post(endpoint).contentType("application/json")).andExpect(status().isOk()).andExpect(jsonPath("$.data.habits[0].checks['2026-11-19']").value(1));
-        assertEquals(3, load().path("data").path("tasks").size());
+        assertEquals(2, load().path("data").path("tasks").size());
         mvc.perform(put("/api/workspace").contentType("application/json").content(prepared.toString())).andExpect(status().isConflict());
         mvc.perform(post("/api/workspace/tasks/missing/complete?day=2026-11-19").contentType("application/json")).andExpect(status().isNotFound());
         mvc.perform(get("/api/workspace/widget?day=bad-date").header("X-Dotodo-Widget", "1")).andExpect(status().isBadRequest());

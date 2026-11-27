@@ -25,23 +25,23 @@ test("recurring completion produces one reset successor, including after undo/re
   let w = createWorkspace(false);
   const t = newTask("반복 일정", {
     date: "2026-10-28",
-    repeat: "daily",
+    repeat: "weekly",
     checklist: [{ id: "step", title: "하위 작업", done: true }],
   });
   w.tasks = [t];
   w = toggleTask(w, t.id);
   assert.equal(w.tasks.length, 2);
-  assert.equal(w.tasks[1].date, "2026-10-29");
+  assert.equal(w.tasks[1].date, "2026-11-04");
   assert.equal(w.tasks[1].checklist[0].done, false);
   w = toggleTask(w, t.id);
   w = toggleTask(w, t.id);
   assert.equal(w.tasks.length, 2);
   assert.equal(w.tasks[0].completed, true);
 });
-test("smart lists include overdue today, bound seven days and exclude trash", () => {
+test("smart lists exclude overdue today, bound seven days and exclude trash", () => {
   const today = "2026-10-28";
   const overdue = newTask("지난 일", { date: "2026-10-27" });
-  assert.equal(matches(overdue, "today", today), true);
+  assert.equal(matches(overdue, "today", today), false);
   assert.equal(
     matches(newTask("다음주", { date: "2026-11-04" }), "week", today),
     false

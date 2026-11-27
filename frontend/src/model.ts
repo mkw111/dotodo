@@ -160,7 +160,7 @@ export function saveTaskWithHabit(state: Workspace, task: Task, linkHabit?: bool
 export function materializeDailyTasks(state: Workspace, today = localDate()): Workspace {
   const tasks = [...state.tasks];
   const children = new Set(tasks.map((task) => task.recurrenceSource).filter(Boolean));
-  const until = addDays(today, 1);
+  const until = today;
   for (let i = 0; i < tasks.length && tasks.length < 10000; i++) {
     const task = tasks[i];
     if (task.repeat !== "daily" || task.actual || task.deletedAt || !task.date ||
@@ -179,7 +179,8 @@ export function materializeDailyTasks(state: Workspace, today = localDate()): Wo
 
 export function carriesToDay(task: Task, lists: Workspace["lists"], day: string): boolean {
   return Boolean(task.date) && (task.endDate || task.date) < day &&
-    task.repeat !== "daily" && lists.find((list) => list.id === task.listId)?.autoCarry !== false;
+    !task.completed && !task.deletedAt && task.repeat !== "daily" &&
+    (task.autoCarry ?? lists.find((list) => list.id === task.listId)?.autoCarry) === true;
 }
 
 export function toggleTask(state: Workspace, id: string, completedDay?: string): Workspace {
@@ -198,7 +199,7 @@ export function toggleTask(state: Workspace, id: string, completedDay?: string):
   );
   if (
     completed &&
-    task.repeat !== "none" &&
+    task.repeat !== "none" && task.repeat !== "daily" &&
     task.date &&
     !tasks.some((t) => t.recurrenceSource === id)
   )
@@ -274,8 +275,7 @@ export function matches(task: Task, view: View, today = localDate()): boolean {
   if (view === "trash") return Boolean(task.deletedAt);
   if (task.deletedAt) return false;
   if (view === "completed") return task.completed;
-  if (view === "today") return scheduledOn(task, today) ||
-    (Boolean(task.date) && task.date < today && task.repeat !== "daily");
+  if (view === "today") return scheduledOn(task, today);
   if (view === "tomorrow") return scheduledOn(task, addDays(today, 1));
   if (view === "week")
     return (
@@ -558,6 +558,7 @@ export function validateWorkspace(value: unknown): Workspace {
         t.checklist.every(
           (c) => str(c.title, 150, 1) && typeof c.done === "boolean"
         ) &&
+        (t.autoCarry === undefined || typeof t.autoCarry === "boolean") &&
         Object.hasOwn(repeatNames, t.repeat) &&
         typeof t.completed === "boolean" &&
         stamp(t.completedAt) &&

@@ -20,6 +20,7 @@ export type Task = {
   recurrenceSource?: string;
   habitId?: string;
   actual?: boolean;
+  autoCarry?: boolean;
   repeatDay?: number;
   durationMinutes?: number;
   reminderMinutes?: number;
