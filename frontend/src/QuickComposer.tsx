@@ -70,7 +70,7 @@ export default function QuickComposer({
       if (await onAdd(input)) {
         setAddedCount((count) => count + 1);
         // Do not erase a new draft typed while the previous request was saving.
-        if (latestText.current === submittedText) {
+        if (latestText.current === submittedText && editor.current?.textContent === submittedText) {
           setText("");
           setIgnored([]);
           if (!sheetLists) { setDate(null); setPriority(null); }
