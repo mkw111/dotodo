@@ -1133,14 +1133,7 @@ export default function App() {
                     tasks={dayTasks} onSelect={(day) => {
                       if (!canLeaveDetail()) return;
                       setHomeDate(day === today ? null : day); setSelected(null); setChecked([]);
-                    }} onReview={() => {
-                      if (!canLeaveDetail()) return;
-                      setCalendarStart(displayedDay); navigate("calendar", "review");
                     }} />}
-                  {home && <button className="inline-task-add" onClick={openQuickAdd}>
-                    <span><Icon name="plus" size={20} /></span>
-                    <strong>할 일 추가</strong><small>무엇을 해야 하나요?</small><kbd>N</kbd>
-                  </button>}
                   {view === "today" && !query && (
                     <nav className="home-category-strip" aria-label="카테고리별 할 일">
                       {[{ id: "all", name: "전체" }, { id: "inbox", name: "수집함" }, ...state.lists].map((list) =>
@@ -1183,7 +1176,9 @@ export default function App() {
                       }}
                     />
                   )}
-                  <div className="task-view-toolbar">
+                  <details className="task-view-options">
+                    <summary><Icon name="sort" size={14} />정렬 · 그룹 설정</summary>
+                    <div className="task-view-toolbar">
                     <span>
                       <Icon name="list" size={14} />
                       {view === "trash"
@@ -1232,6 +1227,7 @@ export default function App() {
                       </label>
                     </div>
                   </div>
+                  </details>
                   {selectionMode && (
                     <div className="bulk-toolbar">
                       <label>
@@ -1382,6 +1378,10 @@ export default function App() {
                         {completed.map((t) => row(t))}
                       </details>
                     )}
+                  {home && <button className="day-review-link" onClick={() => {
+                    if (!canLeaveDetail()) return;
+                    setCalendarStart(displayedDay); navigate("calendar", "review");
+                  }}><Icon name="calendar" size={16} />하루 돌아보기<Icon name="right" size={14} /></button>}
                   {!home && view !== "trash" && view !== "completed" && (
                     <button
                       className="list-add-bottom"
@@ -1589,7 +1589,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        {notice && (
+        {notice && !quickAddOpen && (
           <div className="toast" role="status">
             <Icon name="check" size={16} />
             <span>{notice}</span>
@@ -1731,11 +1731,7 @@ export default function App() {
             sheetLists={state.lists}
             busy={busy}
             onClose={() => setQuickAddOpen(false)}
-            onAdd={async (draft) => {
-              const saved = await saveTask(fromQuick(draft));
-              if (saved) setQuickAddOpen(false);
-              return saved;
-            }}
+            onAdd={(draft) => saveTask(fromQuick(draft))}
             onDetails={(draft) => {
               setQuickAddOpen(false);
               setNewEditor(fromQuick(draft));

@@ -28,6 +28,10 @@ export default function QuickComposer({
   const [listId, setListId] = useState(defaultListId);
   const [priority, setPriority] = useState<Priority | null>(null);
   const editor = useRef<HTMLDivElement>(null);
+  const saving = useRef(false);
+  const latestText = useRef(text);
+  latestText.current = text;
+  const [addedCount, setAddedCount] = useState(0);
   const appendedPreset = useRef(false);
   useLayoutEffect(() => {
     if (!appendedPreset.current || !editor.current) return;
@@ -57,10 +61,23 @@ export default function QuickComposer({
     setPriority(null);
   }
   async function submit() {
-    if (!input.title.trim() || busy) return;
-    if (await onAdd(input)) {
-      clear();
-      editor.current?.focus();
+    if (!input.title.trim() || busy || saving.current) return;
+    saving.current = true;
+    const submittedText = text;
+    // Keep focus during the request so mobile keyboards stay open.
+    editor.current?.focus({ preventScroll: true });
+    try {
+      if (await onAdd(input)) {
+        setAddedCount((count) => count + 1);
+        // Do not erase a new draft typed while the previous request was saving.
+        if (latestText.current === submittedText) {
+          setText("");
+          setIgnored([]);
+          if (!sheetLists) { setDate(null); setPriority(null); }
+        }
+      }
+    } finally {
+      saving.current = false;
     }
   }
   const active = parsed.tokens.filter((t) => !t.ignored);
@@ -88,6 +105,9 @@ export default function QuickComposer({
       type="submit"
       disabled={busy || !parsed.title.trim()}
       aria-label="빠른 추가 저장"
+      onPointerDown={(event) => {
+        if (document.activeElement === editor.current) event.preventDefault();
+      }}
     >
       <Icon name="arrow" size={17} />
     </button>
@@ -175,19 +195,18 @@ export default function QuickComposer({
               <input type="date" aria-label="빠른 추가 날짜" value={effectiveDate}
                 onChange={(event) => setDate(event.target.value)} />
             </label>
+            <label className="sheet-chip sheet-priority-chip">
+              <Icon name="flag" size={15} />
+              <select aria-label="빠른 추가 우선순위" value={priority ?? parsed.priority}
+                onChange={(event) => setPriority(Number(event.target.value) as Priority)}>
+                {priorityNames.map((name, level) => <option key={level} value={level}>{level ? `${level} · ${name}` : "우선순위"}</option>)}
+              </select>
+            </label>
             {saveButton}
           </div>
-          <div className="sheet-priorities" role="group" aria-label="우선순위">
-            <Icon name="flag" size={15} />
-            {([1, 2, 3, 4] as const).map((level) => (
-              <button key={level} type="button" data-priority={level} aria-label={`우선순위 ${level}`}
-                aria-pressed={input.priority === level}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setPriority(input.priority === level ? (parsed.priority === level ? 0 : null) : level)}>
-                {level}
-              </button>
-            ))}
-          </div>
+          <p className="quick-add-feedback" role="status">
+            {addedCount ? `${addedCount}개 등록했어요. 다음 할 일을 입력하세요.` : "등록 후에도 계속 입력할 수 있어요."}
+          </p>
           <details className="sheet-presets">
             <summary>빠른 날짜·반복</summary>
             {presets}

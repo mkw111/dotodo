@@ -2,9 +2,9 @@ import Icon from "./Icon";
 import { addDays, scheduledOn } from "./model";
 import type { Task } from "./types";
 
-export default function DayNavigator({ day, today, weekStart, tasks, onSelect, onReview }: {
+export default function DayNavigator({ day, today, weekStart, tasks, onSelect }: {
   day: string; today: string; weekStart: number; tasks: Task[];
-  onSelect: (day: string) => void; onReview: () => void;
+  onSelect: (day: string) => void;
 }) {
   const date = new Date(`${day}T12:00:00`);
   const start = addDays(day, -((date.getDay() - weekStart + 7) % 7));
@@ -15,7 +15,6 @@ export default function DayNavigator({ day, today, weekStart, tasks, onSelect, o
         {day !== today && <button className="text-btn" onClick={() => onSelect(today)}>오늘로</button>}
         <button className="icon-btn" aria-label="이전 주" onClick={() => onSelect(addDays(day, -7))}><Icon name="left" size={18} /></button>
         <button className="icon-btn" aria-label="다음 주" onClick={() => onSelect(addDays(day, 7))}><Icon name="right" size={18} /></button>
-        <button className="review-link" onClick={onReview}>하루 돌아보기<Icon name="right" size={14} /></button>
       </div>
     </div>
     <div className="day-navigator-week">

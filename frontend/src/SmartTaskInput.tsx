@@ -139,7 +139,7 @@ export default function SmartTaskInput({
       aria-label="빠른 할 일 추가"
       aria-multiline="false"
       data-placeholder={placeholder}
-      enterKeyHint="done"
+      enterKeyHint="send"
       contentEditable
       suppressContentEditableWarning
       spellCheck={false}
